@@ -36,8 +36,8 @@ RAPID_API_HOST = "ytstream-download-youtube-videos.p.rapidapi.com"
 RAPID_API_KEY = "e615183034msh2dfda31a47a6f12p1fa6ccjsn59a1a5e06415"
 
 limits = httpx.Limits(max_connections=300, max_keepalive_connections=100)
-client_session = httpx.AsyncClient(timeout=10.0, limits=limits, follow_redirects=True)
-no_redirect_client = httpx.AsyncClient(timeout=6.0, limits=limits, follow_redirects=False)
+client_session = httpx.AsyncClient(timeout=8.0, limits=limits, follow_redirects=True)
+no_redirect_client = httpx.AsyncClient(timeout=5.0, limits=limits, follow_redirects=False)
 
 async def fetch_invidious(endpoint: str, params: dict = None, force_instance: str = None):
     if force_instance:
@@ -50,14 +50,75 @@ async def fetch_invidious(endpoint: str, params: dict = None, force_instance: st
     for instance in instances:
         try:
             url = f"{instance.rstrip('/')}/api/v1{endpoint}"
-            response = await client_session.get(url, params=params, timeout=6.0)
+            response = await client_session.get(url, params=params, timeout=5.0)
             response.raise_for_status()
             return response.json()
-        except (httpx.TimeoutException, httpx.HTTPStatusError, Exception) as e:
+        except Exception as e:
             last_error = e
             continue
     
-    raise last_error if last_error else Exception("All instances failed")
+    raise last_error if last_error else Exception("All Invidious instances failed")
+
+# Sia API (優先度向上 & 高速レスポンス)
+async def fetch_sia_stream(v: str):
+    try:
+        url = f"https://siatube.com/api/stream/{v}"
+        resp = await client_session.get(url, timeout=3.5)
+        if resp.status_code == 200:
+            data = resp.json()
+            stream_urls = []
+            video_urls = []
+
+            muxed = data.get("muxed", []) or data.get("formats", []) or []
+            if isinstance(muxed, list):
+                for item in muxed:
+                    u = item.get("url")
+                    if u:
+                        video_urls.append(u)
+                        stream_urls.append({
+                            "url": u,
+                            "resolution": item.get("quality", item.get("qualityLabel", "Auto")),
+                            "format": "mp4/mixed",
+                            "audioUrl": ""
+                        })
+
+            hls_url = data.get("hls") or data.get("m3u8") or data.get("manifestUrl")
+            if hls_url:
+                if hls_url not in video_urls:
+                    video_urls.append(hls_url)
+                stream_urls.append({
+                    "url": hls_url,
+                    "resolution": "HLS/Live",
+                    "format": "application/x-mpegURL",
+                    "audioUrl": ""
+                })
+
+            audio_only = data.get("audioOnly", []) or []
+            audio_url = audio_only[0].get("url") if isinstance(audio_only, list) and len(audio_only) > 0 else None
+
+            video_only = data.get("videoOnly", []) or []
+            if isinstance(video_only, list):
+                for item in video_only:
+                    u = item.get("url")
+                    if u:
+                        stream_urls.append({
+                            "url": u,
+                            "resolution": item.get("quality", item.get("qualityLabel", "1080p")),
+                            "format": "webm/videoOnly",
+                            "audioUrl": audio_url or ""
+                        })
+
+            if not video_urls and stream_urls:
+                video_urls = [s["url"] for s in stream_urls if s.get("url")]
+
+            if video_urls:
+                return {
+                    "streamUrls": stream_urls,
+                    "videoUrls": video_urls
+                }
+    except Exception:
+        pass
+    raise Exception("Sia failed")
 
 async def fetch_piped_stream(v: str):
     instances = list(PIPED_INSTANCES)
@@ -65,7 +126,7 @@ async def fetch_piped_stream(v: str):
     for instance in instances:
         try:
             url = f"{instance.rstrip('/')}/streams/{v}"
-            resp = await client_session.get(url, timeout=4.0)
+            resp = await client_session.get(url, timeout=3.5)
             if resp.status_code == 200:
                 data = resp.json()
                 stream_urls = []
@@ -113,73 +174,11 @@ async def fetch_piped_stream(v: str):
             continue
     raise Exception("Piped failed")
 
-async def fetch_sia_stream(v: str):
-    try:
-        url = f"https://siatube.com/api/stream/{v}"
-        resp = await client_session.get(url, timeout=5.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            stream_urls = []
-            video_urls = []
-
-            muxed = data.get("muxed", []) or data.get("formats", []) or []
-            if isinstance(muxed, list):
-                for item in muxed:
-                    u = item.get("url")
-                    if u:
-                        video_urls.append(u)
-                        stream_urls.append({
-                            "url": u,
-                            "resolution": item.get("quality", item.get("qualityLabel", "Auto")),
-                            "format": "mp4/mixed",
-                            "audioUrl": ""
-                        })
-
-            hls_url = data.get("hls") or data.get("m3u8") or data.get("manifestUrl")
-            if hls_url:
-                if hls_url not in video_urls:
-                    video_urls.append(hls_url)
-                stream_urls.append({
-                    "url": hls_url,
-                    "resolution": "HLS/Live",
-                    "format": "application/x-mpegURL",
-                    "audioUrl": ""
-                })
-
-            audio_only = data.get("audioOnly", []) or []
-            audio_url = None
-            if isinstance(audio_only, list) and len(audio_only) > 0:
-                audio_url = audio_only[0].get("url")
-
-            video_only = data.get("videoOnly", []) or []
-            if isinstance(video_only, list):
-                for item in video_only:
-                    u = item.get("url")
-                    if u:
-                        stream_urls.append({
-                            "url": u,
-                            "resolution": item.get("quality", item.get("qualityLabel", "1080p")),
-                            "format": "webm/videoOnly",
-                            "audioUrl": audio_url or ""
-                        })
-
-            if not video_urls and stream_urls:
-                video_urls = [s["url"] for s in stream_urls if s.get("url")]
-
-            if video_urls:
-                return {
-                    "streamUrls": stream_urls,
-                    "videoUrls": video_urls
-                }
-    except Exception:
-        pass
-    raise Exception("Sia failed")
-
 async def fetch_zernio_stream(v: str):
     try:
         target_url = f"https://www.youtube.com/watch?v={v}"
         url = f"https://getlate.dev/api/tools/youtube-live-downloader?url={target_url}"
-        resp = await no_redirect_client.get(url, timeout=5.0)
+        resp = await no_redirect_client.get(url, timeout=4.0)
         if resp.status_code in (301, 302, 303, 307, 308):
             location = resp.headers.get("location") or resp.headers.get("Location")
             if location:
@@ -205,7 +204,7 @@ async def fetch_rapidapi_stream(v: str):
             "X-RapidAPI-Key": RAPID_API_KEY,
             "X-RapidAPI-Host": RAPID_API_HOST
         }
-        resp = await client_session.get(url, headers=headers, timeout=4.0)
+        resp = await client_session.get(url, headers=headers, timeout=3.5)
         if resp.status_code == 200:
             data = resp.json()
             formats = data.get("formats", [])
@@ -231,9 +230,36 @@ async def fetch_rapidapi_stream(v: str):
         pass
     raise Exception("RapidAPI failed")
 
-async def fetch_invidious_stream_and_info(v: str, force_instance: str = None):
-    data = await fetch_invidious(f"/videos/{v}", force_instance=force_instance)
-    adaptive = data.get("adaptiveFormats", [])
+# 並列かつ最速でストリームを取得（Sia含む高速APIを同時レース）
+async def fetch_fastest_stream_urls(v: str):
+    tasks = [
+        asyncio.create_task(fetch_sia_stream(v)),       # Sia優先並列
+        asyncio.create_task(fetch_piped_stream(v)),
+        asyncio.create_task(fetch_rapidapi_stream(v)),
+        asyncio.create_task(fetch_zernio_stream(v))
+    ]
+
+    # 最初に応答のあった成功プロバイダを即時採用
+    for completed in asyncio.as_completed(tasks):
+        try:
+            res = await completed
+            if res and res.get("videoUrls"):
+                # 残りの未完了タスクを即時キャンセルして軽量化
+                for t in tasks:
+                    if not t.done():
+                        t.cancel()
+                return res
+        except Exception:
+            continue
+
+    return None
+
+def extract_invidious_streams(v_data: dict):
+    """InvidiousのメタデータからストリームURLを抽出するユーティリティ関数"""
+    if not v_data:
+        return {"streamUrls": [], "videoUrls": []}
+
+    adaptive = v_data.get("adaptiveFormats", [])
     audio_url = None
     for f in adaptive:
         if "audio" in f.get("type", ""):
@@ -246,7 +272,7 @@ async def fetch_invidious_stream_and_info(v: str, force_instance: str = None):
                 audio_url = f.get("url")
                 break
 
-    format_streams = data.get("formatStreams", [])
+    format_streams = v_data.get("formatStreams", [])
     stream_urls = [{
         "url": fmt.get("url"),
         "resolution": fmt.get("qualityLabel"),
@@ -265,38 +291,9 @@ async def fetch_invidious_stream_and_info(v: str, force_instance: str = None):
                  [fmt.get("url") for fmt in adaptive if "video" in fmt.get("type", "")]
 
     return {
-        "raw_data": data,
         "streamUrls": stream_urls,
         "videoUrls": video_urls
     }
-
-async def fetch_fastest_stream_urls(v: str, force_instance: str = None):
-    tasks = [
-        asyncio.create_task(fetch_piped_stream(v)),
-        asyncio.create_task(fetch_sia_stream(v)),
-        asyncio.create_task(fetch_zernio_stream(v)),
-        asyncio.create_task(fetch_rapidapi_stream(v)),
-        asyncio.create_task(fetch_invidious_stream_and_info(v, force_instance))
-    ]
-    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-    
-    result = None
-    for t in done:
-        try:
-            res = t.result()
-            if res and res.get("videoUrls"):
-                result = res
-                break
-        except Exception:
-            continue
-
-    for t in pending:
-        t.cancel()
-
-    if not result:
-        result = await fetch_invidious_stream_and_info(v, force_instance)
-
-    return result
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
@@ -318,7 +315,7 @@ async def search(request: Request, q: str = Query(...), page: int = 1, type: str
             
             async def fetch_task(instance):
                 url = f"{instance.rstrip('/')}/api/v1/search"
-                resp = await client_session.get(url, params=params, timeout=4.0)
+                resp = await client_session.get(url, params=params, timeout=3.5)
                 resp.raise_for_status()
                 return resp.json()
 
@@ -372,33 +369,31 @@ async def search(request: Request, q: str = Query(...), page: int = 1, type: str
 async def shorts_player(request: Request, v: str, force_instance: str = Query(None)):
     try:
         video_info_task = fetch_invidious(f"/videos/{v}", force_instance=force_instance)
-        stream_task = fetch_fastest_stream_urls(v, force_instance=force_instance)
+        stream_task = fetch_fastest_stream_urls(v)
         comment_task = fetch_invidious(f"/comments/{v}", force_instance=force_instance)
 
+        # 動画情報、高速ストリーム、コメントを同時完全並列取得
         video_data, stream_data, comment_data = await asyncio.gather(
             video_info_task, stream_task, comment_task, return_exceptions=True
         )
 
-        if isinstance(video_data, Exception) and isinstance(stream_data, Exception):
-            raise video_data if isinstance(video_data, Exception) else stream_data
+        if isinstance(video_data, Exception) and (not stream_data or isinstance(stream_data, Exception)):
+            raise video_data if isinstance(video_data, Exception) else Exception("Failed to load video")
 
-        video_urls = []
-        if not isinstance(stream_data, Exception) and stream_data.get("videoUrls"):
+        v_data = video_data if not isinstance(video_data, Exception) else {}
+        
+        # 最速ストリームAPIが取得できなければInvidious情報から生成
+        if stream_data and not isinstance(stream_data, Exception) and stream_data.get("videoUrls"):
             video_urls = stream_data.get("videoUrls", [])
+        else:
+            invidious_streams = extract_invidious_streams(v_data)
+            video_urls = invidious_streams.get("videoUrls", [])
 
-        if not video_urls and not isinstance(video_data, Exception):
-            format_streams = video_data.get("formatStreams", [])
-            if format_streams:
-                video_urls = [fmt.get("url") for fmt in format_streams]
-            else:
-                adaptive = video_data.get("adaptiveFormats", [])
-                video_urls = [fmt.get("url") for fmt in adaptive if "video" in fmt.get("type", "")]
-
-        v_title = video_data.get("title") if not isinstance(video_data, Exception) else ""
-        v_author = video_data.get("author") if not isinstance(video_data, Exception) else ""
-        v_views = video_data.get("viewCount", 0) if not isinstance(video_data, Exception) else 0
-        v_likes = video_data.get("likeCount", 0) if not isinstance(video_data, Exception) else 0
-        v_desc = video_data.get("descriptionHtml", "").replace("\n", "<br>") if not isinstance(video_data, Exception) else ""
+        v_title = v_data.get("title", "")
+        v_author = v_data.get("author", "")
+        v_views = v_data.get("viewCount", 0)
+        v_likes = v_data.get("likeCount", 0)
+        v_desc = v_data.get("descriptionHtml", "").replace("\n", "<br>")
 
         return templates.TemplateResponse("short.html", {
             "request": request,
@@ -429,7 +424,7 @@ async def watch(request: Request, v: str = Query(...), force_instance: str = Que
             
             async def task(instance):
                 url = f"{instance.rstrip('/')}/api/v1/videos/{vid}"
-                resp = await client_session.get(url, timeout=4.0)
+                resp = await client_session.get(url, timeout=3.5)
                 resp.raise_for_status()
                 return resp.json()
 
@@ -446,54 +441,29 @@ async def watch(request: Request, v: str = Query(...), force_instance: str = Que
             if res is None: res = await fetch_invidious(f"/videos/{vid}")
             return res
 
+        # メタデータ(Invidious), 最速ストリーム(Sia/Piped等), コメントを完全並列実行
         info_task = fetch_video_speculative(v)
-        stream_task = fetch_fastest_stream_urls(v, force_instance=force_instance)
+        stream_task = fetch_fastest_stream_urls(v)
         comment_task = fetch_invidious(f"/comments/{v}", force_instance=force_instance)
 
         video_data, stream_res, comment_data = await asyncio.gather(
             info_task, stream_task, comment_task, return_exceptions=True
         )
 
-        if isinstance(video_data, Exception) and isinstance(stream_res, Exception):
-            raise video_data if isinstance(video_data, Exception) else stream_res
+        if isinstance(video_data, Exception) and (not stream_res or isinstance(stream_res, Exception)):
+            raise video_data if isinstance(video_data, Exception) else Exception("Failed to load video")
 
         v_data = video_data if not isinstance(video_data, Exception) else {}
-        s_data = stream_res if not isinstance(stream_res, Exception) else {}
+        s_data = stream_res if (stream_res and not isinstance(stream_res, Exception)) else {}
 
         stream_urls = s_data.get("streamUrls", [])
         video_urls = s_data.get("videoUrls", [])
 
+        # 外部ストリームAPIが失敗した場合はInvidiousのメタデータからフォールバック生成
         if not stream_urls and v_data:
-            adaptive = v_data.get("adaptiveFormats", [])
-            audio_url = None
-            for f in adaptive:
-                if "audio" in f.get("type", ""):
-                    if f.get("language") == "ja":
-                        audio_url = f.get("url")
-                        break
-            if not audio_url:
-                for f in adaptive:
-                    if "audio" in f.get("type", ""):
-                        audio_url = f.get("url")
-                        break
-
-            format_streams = v_data.get("formatStreams", [])
-            stream_urls = [{
-                "url": fmt.get("url"),
-                "resolution": fmt.get("qualityLabel"),
-                "format": "mp4/mixed",
-                "audioUrl": ""
-            } for fmt in format_streams]
-            
-            stream_urls.extend({
-                "url": fmt.get("url"),
-                "resolution": fmt.get("qualityLabel"),
-                "format": "webm/videoOnly",
-                "audioUrl": audio_url
-            } for fmt in adaptive if "video" in fmt.get("type", "") and "webm" in fmt.get("container", ""))
-
-            video_urls = [fmt.get("url") for fmt in format_streams] or \
-                         [fmt.get("url") for fmt in adaptive if "video" in fmt.get("type", "")]
+            invidious_streams = extract_invidious_streams(v_data)
+            stream_urls = invidious_streams.get("streamUrls", [])
+            video_urls = invidious_streams.get("videoUrls", [])
 
         recommended = [{
             "video_id": rec.get("videoId"),
