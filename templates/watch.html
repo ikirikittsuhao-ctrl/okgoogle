@@ -321,7 +321,7 @@
         <div class="video-section">
             <div id="player-wrapper">
                 <div id="loader" class="loader-overlay"><div class="custom-loader"></div></div>
-                <video id="video-player" controls autoplay poster="/thumbnail?v={{ videoid }}" src="{{ videourls[0] }}">
+                <video id="video-player" controls autoplay poster="/thumbnail?v={{ videoid }}" src="{{ videourls[0] if videourls else '' }}">
                     ブラウザが動画再生に対応していません。
                 </video>
                 <audio id="audio-sync" style="display:none;"></audio>
@@ -343,7 +343,7 @@
                             <i class="fas fa-chevron-down"></i>
                         </div>
                         <div class="custom-options">
-                            <div class="custom-option selected" data-value="{{ videourls[0] }}" data-audio="">自動 (デフォルト)</div>
+                            <div class="custom-option selected" data-value="{{ videourls[0] if videourls else '' }}" data-audio="">自動 (デフォルト)</div>
                             {% for stream in streamUrls %}
                             <div class="custom-option" 
                                  data-value="{{ stream.url }}" 
@@ -375,7 +375,7 @@
                 <div id="comment-list">
                     {% for c in comments %}
                     <div class="comment-item">
-                        <img src="{{ c.authorThumbnails[-1].url if c.authorThumbnails else '' }}" alt="u">
+                        <img src="{{ (c.authorThumbnails|last).url if c.authorThumbnails else '' }}" alt="u">
                         <div>
                             <div class="comment-author">{{ c.author }} • {{ c.publishedText }}</div>
                             <div class="comment-text">{{ c.contentHtml | safe }}</div>
@@ -466,10 +466,10 @@
                 showNotify("Streamソースに戻しました");
             } else {
                 let domain = type === 'nocookie' ? 'www.youtube-nocookie.com' : 'www.youtube-education.com';
-                const ytUrl = `https://${domain}/embed/{{ videoid }}?autoplay=1`;
+                const ytUrl = `https://${domain}/embed/{{ videoid }}`;
                 video.pause();
                 video.style.display = 'none';
-                iframeContainer.innerHTML = `<iframe src="${ytUrl}" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+                iframeContainer.innerHTML = `<iframe src="${ytUrl}?autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
                 iframeContainer.style.display = 'block';
                 showNotify(`${type === 'nocookie' ? 'NoCookie' : 'Education'}に切り替えました`);
             }
