@@ -36,12 +36,10 @@ PIPED_INSTANCES = [
 RAPID_API_HOST = "ytstream-download-youtube-videos.p.rapidapi.com"
 RAPID_API_KEY = "e615183034msh2dfda31a47a6f12p1fa6ccjsn59a1a5e06415"
 
-# HTTP接続プールの拡大とタイムアウトの最適化
 limits = httpx.Limits(max_connections=500, max_keepalive_connections=200)
 client_session = httpx.AsyncClient(timeout=4.5, limits=limits, follow_redirects=True)
 no_redirect_client = httpx.AsyncClient(timeout=3.5, limits=limits, follow_redirects=False)
 
-# ── 超高速化ロジック (インメモリTTLキャッシュ & Single-Flight重複リクエスト結合) ──
 _CACHE = {}
 _INFLIGHT = {}
 _CACHE_LOCK = asyncio.Lock()
@@ -144,7 +142,6 @@ async def fetch_invidious(endpoint: str, params: dict = None, force_instance: st
             if res is not None:
                 return res
 
-            # 残りのインスタンスへフォールバック
             remaining = [i for i in instances if i not in target_instances]
             last_err = None
             for inst in remaining:
@@ -160,7 +157,6 @@ async def fetch_invidious(endpoint: str, params: dict = None, force_instance: st
 
     return await fetch_with_inflight(cache_key, _do_fetch, ttl=180.0)
 
-# Sia API (優先度向上 & 高速レスポンス)
 async def fetch_sia_stream(v: str):
     try:
         url = f"https://siatube.com/api/stream/{v}"
@@ -331,24 +327,21 @@ async def fetch_rapidapi_stream(v: str):
         pass
     raise Exception("RapidAPI failed")
 
-# 並列かつ最速でストリームを取得（Sia含む高速APIを同時レース）
 async def fetch_fastest_stream_urls(v: str):
     cache_key = f"fastest_stream:{v}"
 
     async def _do_fetch():
         tasks = [
-            asyncio.create_task(fetch_sia_stream(v)),       # Sia優先並列
+            asyncio.create_task(fetch_sia_stream(v)),
             asyncio.create_task(fetch_piped_stream(v)),
             asyncio.create_task(fetch_rapidapi_stream(v)),
             asyncio.create_task(fetch_zernio_stream(v))
         ]
 
-        # 最初に応答のあった成功プロバイダを即時採用
         for completed in asyncio.as_completed(tasks):
             try:
                 res = await completed
                 if res and res.get("videoUrls"):
-                    # 残りの未完了タスクを即時キャンセルして軽量化
                     for t in tasks:
                         if not t.done():
                             t.cancel()
@@ -500,7 +493,6 @@ async def shorts_player(request: Request, v: str, force_instance: str = Query(No
         stream_task = fetch_fastest_stream_urls(v)
         comment_task = fetch_invidious(f"/comments/{v}", force_instance=force_instance)
 
-        # 動画情報、高速ストリーム、コメントを同時完全並列取得
         video_data, stream_data, comment_data = await asyncio.gather(
             video_info_task, stream_task, comment_task, return_exceptions=True
         )
@@ -510,7 +502,6 @@ async def shorts_player(request: Request, v: str, force_instance: str = Query(No
 
         v_data = video_data if not isinstance(video_data, Exception) else {}
         
-        # 最速ストリームAPIが取得できなければInvidious情報から生成
         if stream_data and not isinstance(stream_data, Exception) and stream_data.get("videoUrls"):
             video_urls = stream_data.get("videoUrls", [])
         else:
@@ -574,7 +565,6 @@ async def watch(request: Request, v: str = Query(...), force_instance: str = Que
             if res is None: res = await fetch_invidious(f"/videos/{vid}")
             return res
 
-        # メタデータ(Invidious), 最速ストリーム(Sia/Piped等), コメントを完全並列実行
         info_task = fetch_video_speculative(v)
         stream_task = fetch_fastest_stream_urls(v)
         comment_task = fetch_invidious(f"/comments/{v}", force_instance=force_instance)
@@ -592,7 +582,6 @@ async def watch(request: Request, v: str = Query(...), force_instance: str = Que
         stream_urls = s_data.get("streamUrls", [])
         video_urls = s_data.get("videoUrls", [])
 
-        # 外部ストリームAPIが失敗した場合はInvidiousのメタデータからフォールバック生成
         if not stream_urls and v_data:
             invidious_streams = extract_invidious_streams(v_data)
             stream_urls = invidious_streams.get("streamUrls", [])
