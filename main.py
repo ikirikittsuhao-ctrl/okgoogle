@@ -38,8 +38,8 @@ RAPID_API_KEY = "e615183034msh2dfda31a47a6f12p1fa6ccjsn59a1a5e06415"
 
 # HTTP接続プールの拡大とタイムアウトの最適化
 limits = httpx.Limits(max_connections=500, max_keepalive_connections=200)
-client_session = httpx.AsyncClient(timeout=6.0, limits=limits, follow_redirects=True)
-no_redirect_client = httpx.AsyncClient(timeout=4.0, limits=limits, follow_redirects=False)
+client_session = httpx.AsyncClient(timeout=4.5, limits=limits, follow_redirects=True)
+no_redirect_client = httpx.AsyncClient(timeout=3.5, limits=limits, follow_redirects=False)
 
 # ── 超高速化ロジック (インメモリTTLキャッシュ & Single-Flight重複リクエスト結合) ──
 _CACHE = {}
@@ -108,7 +108,7 @@ async def fetch_invidious(endpoint: str, params: dict = None, force_instance: st
             for instance in instances:
                 try:
                     url = f"{instance.rstrip('/')}/api/v1{endpoint}"
-                    response = await client_session.get(url, params=params, timeout=4.0)
+                    response = await client_session.get(url, params=params, timeout=3.0)
                     response.raise_for_status()
                     return response.json()
                 except Exception as e:
@@ -118,11 +118,11 @@ async def fetch_invidious(endpoint: str, params: dict = None, force_instance: st
         else:
             instances = list(INVIDIOUS_INSTANCES)
             random.shuffle(instances)
-            target_instances = instances[:4]
+            target_instances = instances[:5]
             
             async def task(instance):
                 url = f"{instance.rstrip('/')}/api/v1{endpoint}"
-                resp = await client_session.get(url, params=params, timeout=3.5)
+                resp = await client_session.get(url, params=params, timeout=2.8)
                 resp.raise_for_status()
                 return resp.json()
 
@@ -133,7 +133,8 @@ async def fetch_invidious(endpoint: str, params: dict = None, force_instance: st
             for t in done:
                 try:
                     res = t.result()
-                    break
+                    if res is not None:
+                        break
                 except Exception:
                     continue
             
@@ -149,7 +150,7 @@ async def fetch_invidious(endpoint: str, params: dict = None, force_instance: st
             for inst in remaining:
                 try:
                     url = f"{inst.rstrip('/')}/api/v1{endpoint}"
-                    response = await client_session.get(url, params=params, timeout=3.5)
+                    response = await client_session.get(url, params=params, timeout=2.5)
                     response.raise_for_status()
                     return response.json()
                 except Exception as e:
@@ -163,7 +164,7 @@ async def fetch_invidious(endpoint: str, params: dict = None, force_instance: st
 async def fetch_sia_stream(v: str):
     try:
         url = f"https://siatube.com/api/stream/{v}"
-        resp = await client_session.get(url, timeout=3.5)
+        resp = await client_session.get(url, timeout=2.5)
         if resp.status_code == 200:
             data = resp.json()
             stream_urls = []
@@ -226,7 +227,7 @@ async def fetch_piped_stream(v: str):
     for instance in instances:
         try:
             url = f"{instance.rstrip('/')}/streams/{v}"
-            resp = await client_session.get(url, timeout=3.5)
+            resp = await client_session.get(url, timeout=2.5)
             if resp.status_code == 200:
                 data = resp.json()
                 stream_urls = []
@@ -278,7 +279,7 @@ async def fetch_zernio_stream(v: str):
     try:
         target_url = f"https://www.youtube.com/watch?v={v}"
         url = f"https://getlate.dev/api/tools/youtube-live-downloader?url={target_url}"
-        resp = await no_redirect_client.get(url, timeout=4.0)
+        resp = await no_redirect_client.get(url, timeout=3.0)
         if resp.status_code in (301, 302, 303, 307, 308):
             location = resp.headers.get("location") or resp.headers.get("Location")
             if location:
@@ -304,7 +305,7 @@ async def fetch_rapidapi_stream(v: str):
             "X-RapidAPI-Key": RAPID_API_KEY,
             "X-RapidAPI-Host": RAPID_API_HOST
         }
-        resp = await client_session.get(url, headers=headers, timeout=3.5)
+        resp = await client_session.get(url, headers=headers, timeout=2.5)
         if resp.status_code == 200:
             data = resp.json()
             formats = data.get("formats", [])
@@ -400,6 +401,27 @@ def extract_invidious_streams(v_data: dict):
         "videoUrls": video_urls
     }
 
+def process_comments(comment_data):
+    """コメントリストを整形し、チャンネルアイコン(authorIcon)を確実に補填する"""
+    if isinstance(comment_data, Exception) or not comment_data:
+        return []
+    
+    comments = comment_data.get("comments", []) if isinstance(comment_data, dict) else (comment_data if isinstance(comment_data, list) else [])
+    processed = []
+    
+    for c in comments:
+        if not isinstance(c, dict):
+            continue
+        item = dict(c)
+        author_thumbs = item.get("authorThumbnails", [])
+        if author_thumbs and isinstance(author_thumbs, list):
+            item["authorIcon"] = author_thumbs[-1].get("url", "")
+        else:
+            item["authorIcon"] = item.get("authorIcon", "")
+        processed.append(item)
+        
+    return processed
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse("home.html", {"request": request})
@@ -420,7 +442,7 @@ async def search(request: Request, q: str = Query(...), page: int = 1, type: str
             
             async def fetch_task(instance):
                 url = f"{instance.rstrip('/')}/api/v1/search"
-                resp = await client_session.get(url, params=params, timeout=3.5)
+                resp = await client_session.get(url, params=params, timeout=2.8)
                 resp.raise_for_status()
                 return resp.json()
 
@@ -431,7 +453,8 @@ async def search(request: Request, q: str = Query(...), page: int = 1, type: str
             for task in done:
                 try:
                     data = task.result()
-                    break
+                    if data is not None:
+                        break
                 except:
                     continue
             
@@ -500,6 +523,8 @@ async def shorts_player(request: Request, v: str, force_instance: str = Query(No
         v_likes = v_data.get("likeCount", 0)
         v_desc = v_data.get("descriptionHtml", "").replace("\n", "<br>")
 
+        formatted_comments = process_comments(comment_data)
+
         return templates.TemplateResponse("short.html", {
             "request": request,
             "videoid": v,
@@ -509,7 +534,7 @@ async def shorts_player(request: Request, v: str, force_instance: str = Query(No
             "view_count": v_views,
             "like_count": v_likes,
             "description": v_desc,
-            "comments": comment_data.get("comments", []) if not isinstance(comment_data, Exception) else []
+            "comments": formatted_comments
         })
     except httpx.TimeoutException:
         return templates.TemplateResponse("apitimeout.html", {"request": request})
@@ -529,7 +554,7 @@ async def watch(request: Request, v: str = Query(...), force_instance: str = Que
             
             async def task(instance):
                 url = f"{instance.rstrip('/')}/api/v1/videos/{vid}"
-                resp = await client_session.get(url, timeout=3.5)
+                resp = await client_session.get(url, timeout=2.8)
                 resp.raise_for_status()
                 return resp.json()
 
@@ -538,7 +563,10 @@ async def watch(request: Request, v: str = Query(...), force_instance: str = Que
             
             res = None
             for t in done:
-                try: res = t.result(); break
+                try: 
+                    res = t.result()
+                    if res is not None:
+                        break
                 except: continue
             
             for t in pending: t.cancel()
@@ -584,6 +612,8 @@ async def watch(request: Request, v: str = Query(...), force_instance: str = Que
         v_title = v_data.get("title") or s_data.get("title") or ""
         v_author = v_data.get("author") or s_data.get("author") or ""
 
+        formatted_comments = process_comments(comment_data)
+
         response = templates.TemplateResponse("watch.html", {
             "request": request,
             "videoid": v,
@@ -598,7 +628,7 @@ async def watch(request: Request, v: str = Query(...), force_instance: str = Que
             "like_count": v_data.get("likeCount", s_data.get("likeCount", 0)),
             "description": v_data.get("descriptionHtml", "").replace("\n", "<br>") or s_data.get("descriptionHtml", ""),
             "recommended_videos": recommended,
-            "comments": comment_data.get("comments", []) if not isinstance(comment_data, Exception) else [],
+            "comments": formatted_comments,
             "youtube_url": youtube_url
         })
 
@@ -743,7 +773,7 @@ async def suggest(keyword: str):
         random.shuffle(instances)
         for instance in instances:
             try:
-                resp = await client_session.get(f"{instance.rstrip('/')}/api/v1/search/suggestions", params={"q": keyword}, timeout=1.5)
+                resp = await client_session.get(f"{instance.rstrip('/')}/api/v1/search/suggestions", params={"q": keyword}, timeout=1.2)
                 if resp.status_code == 200:
                     return resp.json().get("suggestions", [])
             except: continue
@@ -758,7 +788,7 @@ async def proxy_thumb(v: str):
     async def _do_fetch():
         thumb_url = f"https://i.ytimg.com/vi/{v}/mqdefault.jpg"
         try:
-            resp = await client_session.get(thumb_url, timeout=4.0)
+            resp = await client_session.get(thumb_url, timeout=3.0)
             if resp.status_code == 200:
                 return resp.content
         except:
@@ -795,7 +825,7 @@ async def read_status(request: Request):
     async def check_instance(instance):
         start_time = asyncio.get_event_loop().time()
         try:
-            resp = await client_session.get(f"{instance.rstrip('/')}/api/v1/stats", timeout=4.0)
+            resp = await client_session.get(f"{instance.rstrip('/')}/api/v1/stats", timeout=3.0)
             latency = (asyncio.get_event_loop().time() - start_time) * 1000
             if resp.status_code == 200:
                 data = resp.json()
