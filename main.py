@@ -6,6 +6,7 @@ import httpx
 import asyncio
 import json
 import random
+import time
 from datetime import datetime
 
 app = FastAPI()
@@ -35,29 +36,128 @@ PIPED_INSTANCES = [
 RAPID_API_HOST = "ytstream-download-youtube-videos.p.rapidapi.com"
 RAPID_API_KEY = "e615183034msh2dfda31a47a6f12p1fa6ccjsn59a1a5e06415"
 
-limits = httpx.Limits(max_connections=300, max_keepalive_connections=100)
-client_session = httpx.AsyncClient(timeout=8.0, limits=limits, follow_redirects=True)
-no_redirect_client = httpx.AsyncClient(timeout=5.0, limits=limits, follow_redirects=False)
+# HTTP接続プールの拡大とタイムアウトの最適化
+limits = httpx.Limits(max_connections=500, max_keepalive_connections=200)
+client_session = httpx.AsyncClient(timeout=6.0, limits=limits, follow_redirects=True)
+no_redirect_client = httpx.AsyncClient(timeout=4.0, limits=limits, follow_redirects=False)
+
+# ── 超高速化ロジック (インメモリTTLキャッシュ & Single-Flight重複リクエスト結合) ──
+_CACHE = {}
+_INFLIGHT = {}
+_CACHE_LOCK = asyncio.Lock()
+
+def get_cache(key: str):
+    now = time.time()
+    hit = _CACHE.get(key)
+    if hit and hit["exp"] > now:
+        return hit["val"]
+    return None
+
+def set_cache(key: str, val: any, ttl: float = 180.0):
+    now = time.time()
+    if len(_CACHE) >= 1000:
+        oldest = min(_CACHE, key=lambda k: _CACHE[k]["exp"])
+        _CACHE.pop(oldest, None)
+    _CACHE[key] = {"val": val, "exp": now + ttl}
+
+async def fetch_with_inflight(key: str, fetch_func, ttl: float = 180.0):
+    cached = get_cache(key)
+    if cached is not None:
+        return cached
+
+    loop = asyncio.get_event_loop()
+    async with _CACHE_LOCK:
+        cached = get_cache(key)
+        if cached is not None:
+            return cached
+        if key in _INFLIGHT:
+            fut = _INFLIGHT[key]
+            return await asyncio.shield(fut)
+        
+        fut = loop.create_future()
+        _INFLIGHT[key] = fut
+
+    try:
+        res = await fetch_func()
+        if res is not None:
+            set_cache(key, res, ttl=ttl)
+        if not fut.done():
+            fut.set_result(res)
+        return res
+    except Exception as e:
+        if not fut.done():
+            fut.set_exception(e)
+            try:
+                fut.exception()
+            except Exception:
+                pass
+        raise e
+    finally:
+        async with _CACHE_LOCK:
+            _INFLIGHT.pop(key, None)
+
 
 async def fetch_invidious(endpoint: str, params: dict = None, force_instance: str = None):
-    if force_instance:
-        instances = [force_instance] + [i for i in INVIDIOUS_INSTANCES if i != force_instance]
-    else:
-        instances = list(INVIDIOUS_INSTANCES)
-        random.shuffle(instances)
-    
-    last_error = None
-    for instance in instances:
-        try:
-            url = f"{instance.rstrip('/')}/api/v1{endpoint}"
-            response = await client_session.get(url, params=params, timeout=5.0)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            last_error = e
-            continue
-    
-    raise last_error if last_error else Exception("All Invidious instances failed")
+    param_str = json.dumps(params, sort_keys=True) if params else ""
+    cache_key = f"inv:{endpoint}:{param_str}:{force_instance or ''}"
+
+    async def _do_fetch():
+        if force_instance:
+            instances = [force_instance] + [i for i in INVIDIOUS_INSTANCES if i != force_instance]
+            last_error = None
+            for instance in instances:
+                try:
+                    url = f"{instance.rstrip('/')}/api/v1{endpoint}"
+                    response = await client_session.get(url, params=params, timeout=4.0)
+                    response.raise_for_status()
+                    return response.json()
+                except Exception as e:
+                    last_error = e
+                    continue
+            raise last_error if last_error else Exception("All Invidious instances failed")
+        else:
+            instances = list(INVIDIOUS_INSTANCES)
+            random.shuffle(instances)
+            target_instances = instances[:4]
+            
+            async def task(instance):
+                url = f"{instance.rstrip('/')}/api/v1{endpoint}"
+                resp = await client_session.get(url, params=params, timeout=3.5)
+                resp.raise_for_status()
+                return resp.json()
+
+            tasks = [asyncio.create_task(task(inst)) for inst in target_instances]
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            
+            res = None
+            for t in done:
+                try:
+                    res = t.result()
+                    break
+                except Exception:
+                    continue
+            
+            for t in pending:
+                t.cancel()
+            
+            if res is not None:
+                return res
+
+            # 残りのインスタンスへフォールバック
+            remaining = [i for i in instances if i not in target_instances]
+            last_err = None
+            for inst in remaining:
+                try:
+                    url = f"{inst.rstrip('/')}/api/v1{endpoint}"
+                    response = await client_session.get(url, params=params, timeout=3.5)
+                    response.raise_for_status()
+                    return response.json()
+                except Exception as e:
+                    last_err = e
+                    continue
+            raise last_err if last_err else Exception("All Invidious instances failed")
+
+    return await fetch_with_inflight(cache_key, _do_fetch, ttl=180.0)
 
 # Sia API (優先度向上 & 高速レスポンス)
 async def fetch_sia_stream(v: str):
@@ -232,27 +332,32 @@ async def fetch_rapidapi_stream(v: str):
 
 # 並列かつ最速でストリームを取得（Sia含む高速APIを同時レース）
 async def fetch_fastest_stream_urls(v: str):
-    tasks = [
-        asyncio.create_task(fetch_sia_stream(v)),       # Sia優先並列
-        asyncio.create_task(fetch_piped_stream(v)),
-        asyncio.create_task(fetch_rapidapi_stream(v)),
-        asyncio.create_task(fetch_zernio_stream(v))
-    ]
+    cache_key = f"fastest_stream:{v}"
 
-    # 最初に応答のあった成功プロバイダを即時採用
-    for completed in asyncio.as_completed(tasks):
-        try:
-            res = await completed
-            if res and res.get("videoUrls"):
-                # 残りの未完了タスクを即時キャンセルして軽量化
-                for t in tasks:
-                    if not t.done():
-                        t.cancel()
-                return res
-        except Exception:
-            continue
+    async def _do_fetch():
+        tasks = [
+            asyncio.create_task(fetch_sia_stream(v)),       # Sia優先並列
+            asyncio.create_task(fetch_piped_stream(v)),
+            asyncio.create_task(fetch_rapidapi_stream(v)),
+            asyncio.create_task(fetch_zernio_stream(v))
+        ]
 
-    return None
+        # 最初に応答のあった成功プロバイダを即時採用
+        for completed in asyncio.as_completed(tasks):
+            try:
+                res = await completed
+                if res and res.get("videoUrls"):
+                    # 残りの未完了タスクを即時キャンセルして軽量化
+                    for t in tasks:
+                        if not t.done():
+                            t.cancel()
+                    return res
+            except Exception:
+                continue
+
+        return None
+
+    return await fetch_with_inflight(cache_key, _do_fetch, ttl=120.0)
 
 def extract_invidious_streams(v_data: dict):
     """InvidiousのメタデータからストリームURLを抽出するユーティリティ関数"""
@@ -631,23 +736,39 @@ async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str
 
 @app.get("/suggest")
 async def suggest(keyword: str):
-    instances = list(INVIDIOUS_INSTANCES)
-    random.shuffle(instances)
-    for instance in instances:
-        try:
-            resp = await client_session.get(f"{instance.rstrip('/')}/api/v1/search/suggestions", params={"q": keyword}, timeout=1.5)
-            if resp.status_code == 200:
-                return resp.json().get("suggestions", [])
-        except: continue
-    return []
+    cache_key = f"suggest:{keyword}"
+
+    async def _do_fetch():
+        instances = list(INVIDIOUS_INSTANCES)
+        random.shuffle(instances)
+        for instance in instances:
+            try:
+                resp = await client_session.get(f"{instance.rstrip('/')}/api/v1/search/suggestions", params={"q": keyword}, timeout=1.5)
+                if resp.status_code == 200:
+                    return resp.json().get("suggestions", [])
+            except: continue
+        return []
+
+    return await fetch_with_inflight(cache_key, _do_fetch, ttl=600.0)
 
 @app.get("/proxy/thumb")
 async def proxy_thumb(v: str):
-    thumb_url = f"https://i.ytimg.com/vi/{v}/mqdefault.jpg"
-    try:
-        resp = await client_session.get(thumb_url, timeout=4.0)
-        return Response(content=resp.content, media_type="image/jpeg")
-    except: return Response(status_code=404)
+    cache_key = f"thumb:{v}"
+
+    async def _do_fetch():
+        thumb_url = f"https://i.ytimg.com/vi/{v}/mqdefault.jpg"
+        try:
+            resp = await client_session.get(thumb_url, timeout=4.0)
+            if resp.status_code == 200:
+                return resp.content
+        except:
+            pass
+        return None
+
+    content = await fetch_with_inflight(cache_key, _do_fetch, ttl=1800.0)
+    if content:
+        return Response(content=content, media_type="image/jpeg")
+    return Response(status_code=404)
 
 @app.get("/thumbnail")
 async def thumbnail(v: str):
