@@ -157,6 +157,78 @@ async def fetch_invidious(endpoint: str, params: dict = None, force_instance: st
 
     return await fetch_with_inflight(cache_key, _do_fetch, ttl=180.0)
 
+async def fetch_sia_video(v: str):
+    """Sia API (https://siatube.com/api/video/{v}) から動画情報を最優先で取得する"""
+    try:
+        url = f"https://siatube.com/api/video/{v}"
+        resp = await client_session.get(url, timeout=3.0)
+        if resp.status_code == 200:
+            data = resp.json()
+
+            # チャンネル情報の整形
+            author_info = data.get("author", {}) if isinstance(data.get("author"), dict) else {}
+            author_name = author_info.get("name") or data.get("uploader") or ""
+            author_id = author_info.get("id", "")
+            author_icon = author_info.get("thumbnail", "")
+            sub_count = author_info.get("subscribers", "非公開")
+
+            # 概要欄の整形
+            desc_obj = data.get("description", {})
+            if isinstance(desc_obj, dict):
+                desc_text = desc_obj.get("text", "")
+            else:
+                desc_text = str(desc_obj or "")
+            desc_html = desc_text.replace("\n", "<br>")
+
+            # 関連動画の整形 (Base64サムネイル等に対応)
+            rel_data = data.get("Related-videos", {}) or data.get("relatedVideos", {})
+            raw_rel = rel_data.get("relatedVideos", []) if isinstance(rel_data, dict) else (rel_data if isinstance(rel_data, list) else [])
+            
+            recommended = []
+            for item in raw_rel:
+                if not isinstance(item, dict):
+                    continue
+                thumbs = item.get("thumbnails", [])
+                thumb_url = thumbs[0].get("url", "") if isinstance(thumbs, list) and thumbs else ""
+                
+                recommended.append({
+                    "video_id": item.get("videoId") or item.get("id"),
+                    "title": item.get("title"),
+                    "author": item.get("channelName") or item.get("author"),
+                    "view_count_text": item.get("viewCountText"),
+                    "thumbnail": thumb_url
+                })
+
+            return {
+                "title": data.get("title", ""),
+                "author": author_name,
+                "authorId": author_id,
+                "authorIcon": author_icon,
+                "subCountText": sub_count,
+                "viewCount": data.get("views", 0),
+                "likeCount": data.get("likes", 0),
+                "descriptionHtml": desc_html,
+                "recommendedVideos": recommended,
+                "thumbnail": data.get("thumbnail", "")
+            }
+    except Exception:
+        pass
+    raise Exception("Sia video info failed")
+
+async def fetch_video_info(v: str, force_instance: str = None):
+    """動画情報取得のラッパー: Sia APIを最優先し、失敗時はInvidiousへフォールバック"""
+    cache_key = f"video_info:{v}:{force_instance or ''}"
+
+    async def _do_fetch():
+        if not force_instance:
+            try:
+                return await fetch_sia_video(v)
+            except Exception:
+                pass
+        return await fetch_invidious(f"/videos/{v}", force_instance=force_instance)
+
+    return await fetch_with_inflight(cache_key, _do_fetch, ttl=180.0)
+
 async def fetch_sia_stream(v: str):
     try:
         url = f"https://siatube.com/api/stream/{v}"
@@ -328,6 +400,7 @@ async def fetch_rapidapi_stream(v: str):
     raise Exception("RapidAPI failed")
 
 async def fetch_fastest_stream_urls(v: str):
+    """Siaを優先せず、全APIを対等に並列実行して最速のストリームURLを取得する"""
     cache_key = f"fastest_stream:{v}"
 
     async def _do_fetch():
@@ -352,6 +425,59 @@ async def fetch_fastest_stream_urls(v: str):
         return None
 
     return await fetch_with_inflight(cache_key, _do_fetch, ttl=120.0)
+
+async def fetch_sia_comments(v: str):
+    """Sia API (https://siatube.com/api/comments?videoId={v}) からコメントを取得する"""
+    try:
+        url = f"https://siatube.com/api/comments?videoId={v}"
+        resp = await client_session.get(url, timeout=3.5)
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, dict) and "comments" in data:
+                return data
+    except Exception:
+        pass
+    raise Exception("Sia comments failed")
+
+async def fetch_comments(v: str, force_instance: str = None):
+    """コメント取得: Sia APIを最優先し、3秒経過または失敗時にInvidiousへ並列フォールバック"""
+    cache_key = f"comments:{v}:{force_instance or ''}"
+
+    async def _do_fetch():
+        sia_task = asyncio.create_task(fetch_sia_comments(v))
+        
+        # 3秒間 Sia API の結果を待機
+        done, pending = await asyncio.wait([sia_task], timeout=3.0)
+        
+        if sia_task in done:
+            try:
+                res = sia_task.result()
+                if res is not None:
+                    return res
+            except Exception:
+                pass
+
+        # 3秒経過してもSiaが終わらない、またはSiaが失敗した場合にInvidiousを並列起動
+        invidious_task = asyncio.create_task(fetch_invidious(f"/comments/{v}", force_instance=force_instance))
+        
+        remaining_tasks = [t for t in [sia_task, invidious_task] if not t.done()]
+        
+        while remaining_tasks:
+            done_batch, pending_batch = await asyncio.wait(remaining_tasks, return_when=asyncio.FIRST_COMPLETED)
+            for t in done_batch:
+                try:
+                    res = t.result()
+                    if res is not None:
+                        for p in pending_batch:
+                            p.cancel()
+                        return res
+                except Exception:
+                    continue
+            remaining_tasks = list(pending_batch)
+
+        return None
+
+    return await fetch_with_inflight(cache_key, _do_fetch, ttl=180.0)
 
 def extract_invidious_streams(v_data: dict):
     """InvidiousのメタデータからストリームURLを抽出するユーティリティ関数"""
@@ -395,7 +521,7 @@ def extract_invidious_streams(v_data: dict):
     }
 
 def process_comments(comment_data):
-    """コメントリストを整形し、チャンネルアイコン(authorIcon)を確実に補填する"""
+    """コメントリストを整形し、Sia APIおよびInvidious双方のレスポンスに対応する"""
     if isinstance(comment_data, Exception) or not comment_data:
         return []
     
@@ -406,11 +532,39 @@ def process_comments(comment_data):
         if not isinstance(c, dict):
             continue
         item = dict(c)
-        author_thumbs = item.get("authorThumbnails", [])
-        if author_thumbs and isinstance(author_thumbs, list):
-            item["authorIcon"] = author_thumbs[-1].get("url", "")
+
+        # 著者情報（Sia APIとInvidious両対応）
+        author_obj = item.get("author")
+        if isinstance(author_obj, dict):
+            item["author"] = author_obj.get("name", "")
+            item["authorIcon"] = author_obj.get("avatar", "")
+            item["authorId"] = author_obj.get("channelId", "")
         else:
-            item["authorIcon"] = item.get("authorIcon", "")
+            author_thumbs = item.get("authorThumbnails", [])
+            if author_thumbs and isinstance(author_thumbs, list):
+                item["authorIcon"] = author_thumbs[-1].get("url", "")
+            else:
+                item["authorIcon"] = item.get("authorIcon", "")
+
+        # コメント本文の整形（Sia: text, Invidious: content/contentHtml）
+        if "text" in item and "contentHtml" not in item and "content" not in item:
+            text_str = item.get("text", "")
+            item["content"] = text_str
+            item["contentHtml"] = text_str.replace("\n", "<br>")
+        elif "contentHtml" in item and "content" not in item:
+            item["content"] = item.get("contentHtml", "")
+        elif "content" in item and "contentHtml" not in item:
+            item["contentHtml"] = item.get("content", "").replace("\n", "<br>")
+
+        # 投稿時間の整形（Sia: publishedTime, Invidious: publishedText）
+        if "publishedTime" in item and "publishedText" not in item:
+            item["publishedText"] = item.get("publishedTime", "")
+
+        # 高評価数の整形（Sia: likes.count, Invidious: likeCount）
+        likes_obj = item.get("likes")
+        if isinstance(likes_obj, dict):
+            item["likeCount"] = likes_obj.get("count", 0)
+
         processed.append(item)
         
     return processed
@@ -489,9 +643,9 @@ async def search(request: Request, q: str = Query(...), page: int = 1, type: str
 @app.get("/shorts/{v}", response_class=HTMLResponse)
 async def shorts_player(request: Request, v: str, force_instance: str = Query(None)):
     try:
-        video_info_task = fetch_invidious(f"/videos/{v}", force_instance=force_instance)
+        video_info_task = fetch_video_info(v, force_instance=force_instance)
         stream_task = fetch_fastest_stream_urls(v)
-        comment_task = fetch_invidious(f"/comments/{v}", force_instance=force_instance)
+        comment_task = fetch_comments(v, force_instance=force_instance)
 
         video_data, stream_data, comment_data = await asyncio.gather(
             video_info_task, stream_task, comment_task, return_exceptions=True
@@ -512,7 +666,7 @@ async def shorts_player(request: Request, v: str, force_instance: str = Query(No
         v_author = v_data.get("author", "")
         v_views = v_data.get("viewCount", 0)
         v_likes = v_data.get("likeCount", 0)
-        v_desc = v_data.get("descriptionHtml", "").replace("\n", "<br>")
+        v_desc = v_data.get("descriptionHtml") or v_data.get("description", "").replace("\n", "<br>")
 
         formatted_comments = process_comments(comment_data)
 
@@ -535,39 +689,9 @@ async def shorts_player(request: Request, v: str, force_instance: str = Query(No
 @app.get("/watch", response_class=HTMLResponse)
 async def watch(request: Request, v: str = Query(...), force_instance: str = Query(None)):
     try:
-        async def fetch_video_speculative(vid):
-            if force_instance:
-                return await fetch_invidious(f"/videos/{vid}", force_instance=force_instance)
-            
-            instances = list(INVIDIOUS_INSTANCES)
-            random.shuffle(instances)
-            target_instances = instances[:4]
-            
-            async def task(instance):
-                url = f"{instance.rstrip('/')}/api/v1/videos/{vid}"
-                resp = await client_session.get(url, timeout=2.8)
-                resp.raise_for_status()
-                return resp.json()
-
-            tasks = [asyncio.create_task(task(inst)) for inst in target_instances]
-            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-            
-            res = None
-            for t in done:
-                try: 
-                    res = t.result()
-                    if res is not None:
-                        break
-                except: continue
-            
-            for t in pending: t.cancel()
-            
-            if res is None: res = await fetch_invidious(f"/videos/{vid}")
-            return res
-
-        info_task = fetch_video_speculative(v)
+        info_task = fetch_video_info(v, force_instance=force_instance)
         stream_task = fetch_fastest_stream_urls(v)
-        comment_task = fetch_invidious(f"/comments/{v}", force_instance=force_instance)
+        comment_task = fetch_comments(v, force_instance=force_instance)
 
         video_data, stream_res, comment_data = await asyncio.gather(
             info_task, stream_task, comment_task, return_exceptions=True
@@ -587,19 +711,31 @@ async def watch(request: Request, v: str = Query(...), force_instance: str = Que
             stream_urls = invidious_streams.get("streamUrls", [])
             video_urls = invidious_streams.get("videoUrls", [])
 
-        recommended = [{
-            "video_id": rec.get("videoId"),
-            "title": rec.get("title"),
-            "author": rec.get("author"),
-            "view_count_text": rec.get("viewCountText")
-        } for rec in v_data.get("recommendedVideos", [])]
+        # 関連動画の抽出（Sia APIとInvidious双方に対応）
+        recommended = []
+        raw_recs = v_data.get("recommendedVideos", [])
+        for rec in raw_recs:
+            if not isinstance(rec, dict):
+                continue
+            recommended.append({
+                "video_id": rec.get("video_id") or rec.get("videoId"),
+                "title": rec.get("title"),
+                "author": rec.get("author"),
+                "view_count_text": rec.get("view_count_text") or rec.get("viewCountText"),
+                "thumbnail": rec.get("thumbnail", "")
+            })
 
-        author_thumbs = v_data.get("authorThumbnails", [])
-        author_icon = author_thumbs[-1]["url"] if author_thumbs else ""
+        # チャンネルアイコンの抽出（Sia APIとInvidious双方に対応）
+        author_icon = v_data.get("authorIcon")
+        if not author_icon:
+            author_thumbs = v_data.get("authorThumbnails", [])
+            author_icon = author_thumbs[-1]["url"] if author_thumbs else ""
 
         youtube_url = f"https://www.youtube.com/watch?v={v}"
         v_title = v_data.get("title") or s_data.get("title") or ""
         v_author = v_data.get("author") or s_data.get("author") or ""
+        v_sub_count = v_data.get("subCountText") or v_data.get("subCountText", "非公開")
+        v_desc = v_data.get("descriptionHtml") or s_data.get("descriptionHtml") or v_data.get("description", "").replace("\n", "<br>")
 
         formatted_comments = process_comments(comment_data)
 
@@ -612,10 +748,10 @@ async def watch(request: Request, v: str = Query(...), force_instance: str = Que
             "author": v_author,
             "author_id": v_data.get("authorId") or s_data.get("authorId"),
             "author_icon": author_icon,
-            "subscribers_count": v_data.get("subCountText", "非公開"),
+            "subscribers_count": v_sub_count,
             "view_count": v_data.get("viewCount", s_data.get("viewCount", 0)),
             "like_count": v_data.get("likeCount", s_data.get("likeCount", 0)),
-            "description": v_data.get("descriptionHtml", "").replace("\n", "<br>") or s_data.get("descriptionHtml", ""),
+            "description": v_desc,
             "recommended_videos": recommended,
             "comments": formatted_comments,
             "youtube_url": youtube_url
