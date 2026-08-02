@@ -479,6 +479,19 @@ async def fetch_comments(v: str, force_instance: str = None):
 
     return await fetch_with_inflight(cache_key, _do_fetch, ttl=180.0)
 
+async def fetch_sia_channel(ucid: str):
+    """Sia API (https://siatube.com/api/channel/{ucid}) からチャンネル情報を最優先で取得する"""
+    try:
+        url = f"https://siatube.com/api/channel/{ucid}"
+        resp = await client_session.get(url, timeout=3.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, dict) and ("author" in data or "title" in data or "videos" in data or "name" in data):
+                return data
+    except Exception:
+        pass
+    raise Exception("Sia channel failed")
+
 def extract_invidious_streams(v_data: dict):
     """InvidiousのメタデータからストリームURLを抽出するユーティリティ関数"""
     if not v_data:
@@ -537,14 +550,23 @@ def process_comments(comment_data):
         author_obj = item.get("author")
         if isinstance(author_obj, dict):
             item["author"] = author_obj.get("name", "")
-            item["authorIcon"] = author_obj.get("avatar", "")
+            item["authorIcon"] = author_obj.get("avatar") or author_obj.get("authorIcon") or item.get("avatar", "")
             item["authorId"] = author_obj.get("channelId", "")
         else:
             author_thumbs = item.get("authorThumbnails", [])
             if author_thumbs and isinstance(author_thumbs, list):
                 item["authorIcon"] = author_thumbs[-1].get("url", "")
             else:
-                item["authorIcon"] = item.get("authorIcon", "")
+                item["authorIcon"] = item.get("authorIcon") or item.get("avatar", "")
+
+        # Sia APIで取得したコメントに avatar キーが直接含まれる場合の取得強化
+        if "avatar" in item and item["avatar"]:
+            item["authorIcon"] = item["avatar"]
+        elif isinstance(author_obj, dict) and author_obj.get("avatar"):
+            item["authorIcon"] = author_obj.get("avatar")
+            item["avatar"] = author_obj.get("avatar")
+        elif "authorIcon" in item and item["authorIcon"]:
+            item["avatar"] = item["authorIcon"]
 
         # コメント本文の整形（Sia: text, Invidious: content/contentHtml）
         if "text" in item and "contentHtml" not in item and "content" not in item:
@@ -815,21 +837,47 @@ async def playlist(request: Request, list: str = Query(...), force_instance: str
 @app.get("/channel/{ucid}", response_class=HTMLResponse)
 async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str = "videos", force_instance: str = Query(None)):
     try:
-        tasks = [
-            fetch_invidious(f"/channels/{ucid}", force_instance=force_instance),
-            fetch_invidious(f"/channels/{ucid}/videos", {"sort_by": sort_by}, force_instance=force_instance),
-            fetch_invidious(f"/channels/{ucid}/shorts", force_instance=force_instance),
-            fetch_invidious(f"/channels/{ucid}/playlists", force_instance=force_instance),
-            fetch_invidious(f"/channels/{ucid}/community", force_instance=force_instance)
-        ]
-        
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        channel_data = results[0] if not isinstance(results[0], Exception) else {}
-        videos_data = results[1] if not isinstance(results[1], Exception) else {}
-        shorts_data = results[2] if not isinstance(results[2], Exception) else {}
-        playlists_data = results[3] if not isinstance(results[3], Exception) else {}
-        community_data = results[4] if not isinstance(results[4], Exception) else {}
+        cache_key = f"channel_data_all:{ucid}:{sort_by}:{force_instance or ''}"
+
+        async def _do_fetch_channel():
+            if not force_instance:
+                try:
+                    sia_res = await fetch_sia_channel(ucid)
+                    if sia_res and isinstance(sia_res, dict):
+                        return {
+                            "channel": sia_res,
+                            "videos": sia_res.get("videos", []),
+                            "shorts": sia_res.get("shorts", []),
+                            "playlists": sia_res.get("playlists", []),
+                            "community": sia_res.get("community", [])
+                        }
+                except Exception:
+                    pass
+
+            tasks = [
+                fetch_invidious(f"/channels/{ucid}", force_instance=force_instance),
+                fetch_invidious(f"/channels/{ucid}/videos", {"sort_by": sort_by}, force_instance=force_instance),
+                fetch_invidious(f"/channels/{ucid}/shorts", force_instance=force_instance),
+                fetch_invidious(f"/channels/{ucid}/playlists", force_instance=force_instance),
+                fetch_invidious(f"/channels/{ucid}/community", force_instance=force_instance)
+            ]
+            
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            return {
+                "channel": results[0] if not isinstance(results[0], Exception) else {},
+                "videos": results[1] if not isinstance(results[1], Exception) else {},
+                "shorts": results[2] if not isinstance(results[2], Exception) else {},
+                "playlists": results[3] if not isinstance(results[3], Exception) else {},
+                "community": results[4] if not isinstance(results[4], Exception) else {}
+            }
+
+        fetched_res = await fetch_with_inflight(cache_key, _do_fetch_channel, ttl=180.0)
+
+        channel_data = fetched_res.get("channel", {})
+        videos_data = fetched_res.get("videos", {})
+        shorts_data = fetched_res.get("shorts", {})
+        playlists_data = fetched_res.get("playlists", {})
+        community_data = fetched_res.get("community", {})
 
         if isinstance(videos_data, list):
             final_videos = videos_data
@@ -846,29 +894,42 @@ async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str
             final_shorts = []
 
         playlists = []
-        for pl in playlists_data.get("playlists", []) if isinstance(playlists_data, dict) else (playlists_data if isinstance(playlists_data, list) else []):
-            thumb = pl.get("playlistThumbnail", "")
+        raw_playlists = playlists_data.get("playlists", []) if isinstance(playlists_data, dict) else (playlists_data if isinstance(playlists_data, list) else [])
+        for pl in raw_playlists:
+            if not isinstance(pl, dict):
+                continue
+            thumb = pl.get("playlistThumbnail", "") or pl.get("thumbnail", "")
             if thumb and not thumb.startswith("http"):
                 thumb = f"https://img.youtube.com/vi/{thumb}/mqdefault.jpg"
             playlists.append({
-                "id": pl.get("playlistId", ""),
+                "id": pl.get("playlistId", "") or pl.get("id", ""),
                 "title": pl.get("title", ""),
                 "video_count": pl.get("videoCount", 0),
                 "thumbnail": thumb,
             })
 
-        author_name = channel_data.get("author")
-        author_icon = channel_data.get("authorThumbnails", [{"url": ""}])[-1]["url"] if channel_data.get("authorThumbnails") else ""
+        author_name = channel_data.get("author") or channel_data.get("name") or ""
+        author_icon = ""
+        if channel_data.get("authorThumbnails"):
+            author_icon = channel_data.get("authorThumbnails")[-1]["url"]
+        elif channel_data.get("authorIcon"):
+            author_icon = channel_data.get("authorIcon")
+        elif channel_data.get("avatar"):
+            author_icon = channel_data.get("avatar")
 
         comments_list = community_data.get("comments", []) if isinstance(community_data, dict) else (community_data if isinstance(community_data, list) else [])
-        community = [{
-            "id": post.get("commentId", ""),
-            "content": post.get("contentHtml", "").replace("\n", "<br>"),
-            "published_text": post.get("publishedText", ""),
-            "likes": post.get("likeCount", 0),
-            "author": author_name,
-            "author_icon": author_icon,
-        } for post in comments_list]
+        community = []
+        for post in comments_list:
+            if not isinstance(post, dict):
+                continue
+            community.append({
+                "id": post.get("commentId", "") or post.get("id", ""),
+                "content": (post.get("contentHtml") or post.get("text") or post.get("content") or "").replace("\n", "<br>"),
+                "published_text": post.get("publishedText") or post.get("publishedTime") or "",
+                "likes": post.get("likeCount") or (post.get("likes", {}).get("count") if isinstance(post.get("likes"), dict) else 0),
+                "author": author_name,
+                "author_icon": author_icon,
+            })
 
         return templates.TemplateResponse("channel.html", {
             "request": request,
@@ -876,7 +937,7 @@ async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str
             "author": author_name,
             "author_icon": author_icon,
             "sub_count": channel_data.get("subCountText", "非公開"),
-            "description": channel_data.get("descriptionHtml", ""),
+            "description": channel_data.get("descriptionHtml") or channel_data.get("description", ""),
             "videos": final_videos,
             "shorts": final_shorts,
             "playlists": playlists,
