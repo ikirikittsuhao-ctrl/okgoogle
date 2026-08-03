@@ -134,6 +134,39 @@ async def get_invidious_instances_from_url(list_url: str) -> list:
     return FALLBACK_INVIDIOUS_INSTANCES
 
 
+async def get_fastest_invidious_instance(list_url: str = INVIDIOUS_VIDEO_LIST_URL) -> str:
+    cache_key = f"fastest_inv_instance:{list_url}"
+    cached = get_cache(cache_key)
+    if cached:
+        return cached
+
+    base_instances = await get_invidious_instances_from_url(list_url)
+    target_instances = base_instances[:10]
+
+    async def ping_instance(instance):
+        start = time.time()
+        try:
+            url = f"{instance.rstrip('/')}/api/v1/stats"
+            resp = await client_session.get(url, timeout=2.0)
+            if resp.status_code == 200:
+                elapsed = time.time() - start
+                return instance, elapsed
+        except Exception:
+            pass
+        return instance, float('inf')
+
+    tasks = [ping_instance(inst) for inst in target_instances]
+    results = await asyncio.gather(*tasks)
+    
+    valid_results = [r for r in results if r[1] < float('inf')]
+    if valid_results:
+        fastest_instance = min(valid_results, key=lambda x: x[1])[0]
+        set_cache(cache_key, fastest_instance, ttl=300.0)
+        return fastest_instance
+
+    return base_instances[0] if base_instances else FALLBACK_INVIDIOUS_INSTANCES[0]
+
+
 async def fetch_invidious(endpoint: str, params: dict = None, force_instance: str = None, list_type: str = "video"):
     param_str = json.dumps(params, sort_keys=True) if params else ""
     cache_key = f"inv:{endpoint}:{param_str}:{force_instance or ''}:{list_type}"
@@ -156,8 +189,8 @@ async def fetch_invidious(endpoint: str, params: dict = None, force_instance: st
                     continue
             raise last_error if last_error else Exception("All Invidious instances failed")
         else:
-            instances = list(base_instances)
-            random.shuffle(instances)
+            fastest = await get_fastest_invidious_instance(list_url)
+            instances = [fastest] + [i for i in base_instances if i != fastest]
             target_instances = instances[:5]
             
             async def task(instance):
@@ -212,6 +245,9 @@ async def fetch_sia_video(v: str):
             author_icon = author_info.get("thumbnail", "")
             sub_count = author_info.get("subscribers", "非公開")
 
+            if not author_name:
+                raise Exception("Sia author_name is empty")
+
             desc_obj = data.get("description", {})
             if isinstance(desc_obj, dict):
                 desc_text = desc_obj.get("text", "")
@@ -260,7 +296,10 @@ async def fetch_video_info(v: str, force_instance: str = None, api: str = None):
         if api == "invidious":
             return await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
         elif api == "sia":
-            return await fetch_sia_video(v)
+            try:
+                return await fetch_sia_video(v)
+            except Exception:
+                return await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
         elif api == "piped":
             piped_res = await fetch_piped_stream(v)
             return piped_res
@@ -451,7 +490,11 @@ async def fetch_fastest_stream_urls(v: str, api: str = None, force_instance: str
 
     async def _do_fetch():
         if api == "sia":
-            return await fetch_sia_stream(v)
+            try:
+                return await fetch_sia_stream(v)
+            except Exception:
+                v_data = await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
+                return extract_invidious_streams(v_data)
         elif api == "piped":
             return await fetch_piped_stream(v)
         elif api == "rapidapi":
@@ -501,7 +544,10 @@ async def fetch_comments(v: str, force_instance: str = None, api: str = None):
 
     async def _do_fetch():
         if api == "sia":
-            return await fetch_sia_comments(v)
+            try:
+                return await fetch_sia_comments(v)
+            except Exception:
+                return await fetch_invidious(f"/comments/{v}", force_instance=force_instance, list_type="video")
         elif api == "invidious":
             return await fetch_invidious(f"/comments/{v}", force_instance=force_instance, list_type="video")
 
@@ -620,6 +666,10 @@ def process_comments(comment_data):
             item["authorIcon"] = author_obj.get("avatar")
             item["avatar"] = author_obj.get("avatar")
         elif "authorIcon" in item and item["authorIcon"]:
+            item["avatar"] = item["authorIcon"]
+
+        if "authorIcon" in item and item["authorIcon"]:
+            item["authorIconUrl"] = item["authorIcon"]
             item["avatar"] = item["authorIcon"]
 
         if "text" in item and "contentHtml" not in item and "content" not in item:
@@ -907,7 +957,7 @@ async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str
                         }
                 except Exception:
                     if api == "sia":
-                        raise
+                        pass
 
             tasks = [
                 fetch_invidious(f"/channels/{ucid}", force_instance=force_instance, list_type="search"),
