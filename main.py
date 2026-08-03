@@ -253,10 +253,18 @@ async def fetch_sia_video(v: str):
         pass
     raise Exception("Sia video info failed")
 
-async def fetch_video_info(v: str, force_instance: str = None):
-    cache_key = f"video_info:{v}:{force_instance or ''}"
+async def fetch_video_info(v: str, force_instance: str = None, api: str = None):
+    cache_key = f"video_info:{v}:{force_instance or ''}:{api or ''}"
 
     async def _do_fetch():
+        if api == "invidious":
+            return await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
+        elif api == "sia":
+            return await fetch_sia_video(v)
+        elif api == "piped":
+            piped_res = await fetch_piped_stream(v)
+            return piped_res
+
         if not force_instance:
             try:
                 return await fetch_sia_video(v)
@@ -438,10 +446,22 @@ async def fetch_rapidapi_stream(v: str):
             continue
     raise Exception("RapidAPI failed")
 
-async def fetch_fastest_stream_urls(v: str):
-    cache_key = f"fastest_stream:{v}"
+async def fetch_fastest_stream_urls(v: str, api: str = None, force_instance: str = None):
+    cache_key = f"fastest_stream:{v}:{api or ''}:{force_instance or ''}"
 
     async def _do_fetch():
+        if api == "sia":
+            return await fetch_sia_stream(v)
+        elif api == "piped":
+            return await fetch_piped_stream(v)
+        elif api == "rapidapi":
+            return await fetch_rapidapi_stream(v)
+        elif api == "zernio":
+            return await fetch_zernio_stream(v)
+        elif api == "invidious":
+            v_data = await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
+            return extract_invidious_streams(v_data)
+
         tasks = [
             asyncio.create_task(fetch_sia_stream(v)),
             asyncio.create_task(fetch_piped_stream(v)),
@@ -476,10 +496,15 @@ async def fetch_sia_comments(v: str):
         pass
     raise Exception("Sia comments failed")
 
-async def fetch_comments(v: str, force_instance: str = None):
-    cache_key = f"comments:{v}:{force_instance or ''}"
+async def fetch_comments(v: str, force_instance: str = None, api: str = None):
+    cache_key = f"comments:{v}:{force_instance or ''}:{api or ''}"
 
     async def _do_fetch():
+        if api == "sia":
+            return await fetch_sia_comments(v)
+        elif api == "invidious":
+            return await fetch_invidious(f"/comments/{v}", force_instance=force_instance, list_type="video")
+
         sia_task = asyncio.create_task(fetch_sia_comments(v))
         
         done, pending = await asyncio.wait([sia_task], timeout=3.0)
@@ -691,11 +716,11 @@ async def search(request: Request, q: str = Query(...), page: int = 1, type: str
         return templates.TemplateResponse("apiallerror.html", {"request": request, "instances": fallback_instances})
 
 @app.get("/shorts/{v}", response_class=HTMLResponse)
-async def shorts_player(request: Request, v: str, force_instance: str = Query(None)):
+async def shorts_player(request: Request, v: str, force_instance: str = Query(None), api: str = Query(None)):
     try:
-        video_info_task = fetch_video_info(v, force_instance=force_instance)
-        stream_task = fetch_fastest_stream_urls(v)
-        comment_task = fetch_comments(v, force_instance=force_instance)
+        video_info_task = fetch_video_info(v, force_instance=force_instance, api=api)
+        stream_task = fetch_fastest_stream_urls(v, api=api, force_instance=force_instance)
+        comment_task = fetch_comments(v, force_instance=force_instance, api=api)
 
         video_data, stream_data, comment_data = await asyncio.gather(
             video_info_task, stream_task, comment_task, return_exceptions=True
@@ -738,11 +763,11 @@ async def shorts_player(request: Request, v: str, force_instance: str = Query(No
         return templates.TemplateResponse("apiallerror.html", {"request": request, "instances": fallback_instances})
 
 @app.get("/watch", response_class=HTMLResponse)
-async def watch(request: Request, v: str = Query(...), force_instance: str = Query(None)):
+async def watch(request: Request, v: str = Query(...), force_instance: str = Query(None), api: str = Query(None)):
     try:
-        info_task = fetch_video_info(v, force_instance=force_instance)
-        stream_task = fetch_fastest_stream_urls(v)
-        comment_task = fetch_comments(v, force_instance=force_instance)
+        info_task = fetch_video_info(v, force_instance=force_instance, api=api)
+        stream_task = fetch_fastest_stream_urls(v, api=api, force_instance=force_instance)
+        comment_task = fetch_comments(v, force_instance=force_instance, api=api)
 
         video_data, stream_res, comment_data = await asyncio.gather(
             info_task, stream_task, comment_task, return_exceptions=True
@@ -864,12 +889,12 @@ async def playlist(request: Request, list: str = Query(...), force_instance: str
         return templates.TemplateResponse("apiallerror.html", {"request": request, "instances": fallback_instances})
 
 @app.get("/channel/{ucid}", response_class=HTMLResponse)
-async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str = "videos", force_instance: str = Query(None)):
+async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str = "videos", force_instance: str = Query(None), api: str = Query(None)):
     try:
-        cache_key = f"channel_data_all:{ucid}:{sort_by}:{force_instance or ''}"
+        cache_key = f"channel_data_all:{ucid}:{sort_by}:{force_instance or ''}:{api or ''}"
 
         async def _do_fetch_channel():
-            if not force_instance:
+            if api == "sia" or (not api and not force_instance):
                 try:
                     sia_res = await fetch_sia_channel(ucid)
                     if sia_res and isinstance(sia_res, dict):
@@ -881,7 +906,8 @@ async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str
                             "community": sia_res.get("community", [])
                         }
                 except Exception:
-                    pass
+                    if api == "sia":
+                        raise
 
             tasks = [
                 fetch_invidious(f"/channels/{ucid}", force_instance=force_instance, list_type="search"),
