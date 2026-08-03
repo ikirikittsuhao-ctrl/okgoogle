@@ -8,13 +8,14 @@ import json
 import random
 import time
 from datetime import datetime
+import base64
 
 app = FastAPI()
 
 templates = Jinja2Templates(directory="templates")
 templates.env.add_extension('jinja2.ext.do')
 
-INVIDIOUS_INSTANCES = [
+FALLBACK_INVIDIOUS_INSTANCES = [
     "https://invidious.ritoge.com",
     "https://yt.omada.cafe",
     "https://invidious.darkness.services",
@@ -34,7 +35,17 @@ PIPED_INSTANCES = [
 ]
 
 RAPID_API_HOST = "ytstream-download-youtube-videos.p.rapidapi.com"
-RAPID_API_KEY = "e615183034msh2dfda31a47a6f12p1fa6ccjsn59a1a5e06415"
+
+_ENCRYPTED_KEYS = [
+    "ZTYxNTE4MzAzNG1zaDJkZmRhMzFhNDdhNmYxMnAxZmE2Y2Nqc241OWExYTVlMDY0MTU=",
+    "NjllMjk5NWE3OW1zaGNiNjU3MTg0YmE2NzMxY3AxNmY2ODRqc24zMjA1NGEwNzBiYTU="
+]
+
+def _get_rapid_api_keys():
+    return [base64.b64decode(k.encode('utf-8')).decode('utf-8') for k in _ENCRYPTED_KEYS]
+
+INVIDIOUS_VIDEO_LIST_URL = "https://raw.githubusercontent.com/ikirikittsuhao-ctrl/Invidious-check/refs/heads/main/lists/video.json"
+INVIDIOUS_SEARCH_LIST_URL = "https://raw.githubusercontent.com/ikirikittsuhao-ctrl/Invidious-check/refs/heads/main/lists/search.json"
 
 limits = httpx.Limits(max_connections=500, max_keepalive_connections=200)
 client_session = httpx.AsyncClient(timeout=4.5, limits=limits, follow_redirects=True)
@@ -95,13 +106,44 @@ async def fetch_with_inflight(key: str, fetch_func, ttl: float = 180.0):
             _INFLIGHT.pop(key, None)
 
 
-async def fetch_invidious(endpoint: str, params: dict = None, force_instance: str = None):
+async def get_invidious_instances_from_url(list_url: str) -> list:
+    cache_key = f"inv_instances_list:{list_url}"
+    cached = get_cache(cache_key)
+    if cached:
+        return cached
+
+    try:
+        resp = await client_session.get(list_url, timeout=3.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            instances = []
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and "instance" in item:
+                        inst = item["instance"].strip()
+                        if inst:
+                            instances.append(inst)
+                    elif isinstance(item, str):
+                        instances.append(item.strip())
+            if instances:
+                set_cache(cache_key, instances, ttl=600.0)
+                return instances
+    except Exception:
+        pass
+
+    return FALLBACK_INVIDIOUS_INSTANCES
+
+
+async def fetch_invidious(endpoint: str, params: dict = None, force_instance: str = None, list_type: str = "video"):
     param_str = json.dumps(params, sort_keys=True) if params else ""
-    cache_key = f"inv:{endpoint}:{param_str}:{force_instance or ''}"
+    cache_key = f"inv:{endpoint}:{param_str}:{force_instance or ''}:{list_type}"
 
     async def _do_fetch():
+        list_url = INVIDIOUS_SEARCH_LIST_URL if list_type == "search" else INVIDIOUS_VIDEO_LIST_URL
+        base_instances = await get_invidious_instances_from_url(list_url)
+
         if force_instance:
-            instances = [force_instance] + [i for i in INVIDIOUS_INSTANCES if i != force_instance]
+            instances = [force_instance] + [i for i in base_instances if i != force_instance]
             last_error = None
             for instance in instances:
                 try:
@@ -114,7 +156,7 @@ async def fetch_invidious(endpoint: str, params: dict = None, force_instance: st
                     continue
             raise last_error if last_error else Exception("All Invidious instances failed")
         else:
-            instances = list(INVIDIOUS_INSTANCES)
+            instances = list(base_instances)
             random.shuffle(instances)
             target_instances = instances[:5]
             
@@ -158,21 +200,18 @@ async def fetch_invidious(endpoint: str, params: dict = None, force_instance: st
     return await fetch_with_inflight(cache_key, _do_fetch, ttl=180.0)
 
 async def fetch_sia_video(v: str):
-    """Sia API (https://siatube.com/api/video/{v}) から動画情報を最優先で取得する"""
     try:
         url = f"https://siatube.com/api/video/{v}"
         resp = await client_session.get(url, timeout=3.0)
         if resp.status_code == 200:
             data = resp.json()
 
-            # チャンネル情報の整形
             author_info = data.get("author", {}) if isinstance(data.get("author"), dict) else {}
             author_name = author_info.get("name") or data.get("uploader") or ""
             author_id = author_info.get("id", "")
             author_icon = author_info.get("thumbnail", "")
             sub_count = author_info.get("subscribers", "非公開")
 
-            # 概要欄の整形
             desc_obj = data.get("description", {})
             if isinstance(desc_obj, dict):
                 desc_text = desc_obj.get("text", "")
@@ -180,7 +219,6 @@ async def fetch_sia_video(v: str):
                 desc_text = str(desc_obj or "")
             desc_html = desc_text.replace("\n", "<br>")
 
-            # 関連動画の整形 (Base64サムネイル等に対応)
             rel_data = data.get("Related-videos", {}) or data.get("relatedVideos", {})
             raw_rel = rel_data.get("relatedVideos", []) if isinstance(rel_data, dict) else (rel_data if isinstance(rel_data, list) else [])
             
@@ -216,7 +254,6 @@ async def fetch_sia_video(v: str):
     raise Exception("Sia video info failed")
 
 async def fetch_video_info(v: str, force_instance: str = None):
-    """動画情報取得のラッパー: Sia APIを最優先し、失敗時はInvidiousへフォールバック"""
     cache_key = f"video_info:{v}:{force_instance or ''}"
 
     async def _do_fetch():
@@ -225,7 +262,7 @@ async def fetch_video_info(v: str, force_instance: str = None):
                 return await fetch_sia_video(v)
             except Exception:
                 pass
-        return await fetch_invidious(f"/videos/{v}", force_instance=force_instance)
+        return await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
 
     return await fetch_with_inflight(cache_key, _do_fetch, ttl=180.0)
 
@@ -365,42 +402,43 @@ async def fetch_zernio_stream(v: str):
     raise Exception("Zernio failed")
 
 async def fetch_rapidapi_stream(v: str):
-    if not RAPID_API_KEY:
-        raise Exception("No RapidAPI Key")
-    try:
-        url = f"https://{RAPID_API_HOST}/dl?id={v}"
-        headers = {
-            "X-RapidAPI-Key": RAPID_API_KEY,
-            "X-RapidAPI-Host": RAPID_API_HOST
-        }
-        resp = await client_session.get(url, headers=headers, timeout=2.5)
-        if resp.status_code == 200:
-            data = resp.json()
-            formats = data.get("formats", [])
-            stream_urls = []
-            video_urls = []
-            for f in formats:
-                u = f.get("url")
-                if u:
-                    video_urls.append(u)
-                    stream_urls.append({
-                        "url": u,
-                        "resolution": f.get("qualityLabel", "720p"),
-                        "format": "mp4/mixed",
-                        "audioUrl": ""
-                    })
-            if video_urls:
-                return {
-                    "streamUrls": stream_urls,
-                    "videoUrls": video_urls,
-                    "title": data.get("title")
-                }
-    except Exception:
-        pass
+    keys = _get_rapid_api_keys()
+    random.shuffle(keys)
+    
+    for key in keys:
+        try:
+            url = f"https://{RAPID_API_HOST}/dl?id={v}"
+            headers = {
+                "X-RapidAPI-Key": key,
+                "X-RapidAPI-Host": RAPID_API_HOST
+            }
+            resp = await client_session.get(url, headers=headers, timeout=2.5)
+            if resp.status_code == 200:
+                data = resp.json()
+                formats = data.get("formats", [])
+                stream_urls = []
+                video_urls = []
+                for f in formats:
+                    u = f.get("url")
+                    if u:
+                        video_urls.append(u)
+                        stream_urls.append({
+                            "url": u,
+                            "resolution": f.get("qualityLabel", "720p"),
+                            "format": "mp4/mixed",
+                            "audioUrl": ""
+                        })
+                if video_urls:
+                    return {
+                        "streamUrls": stream_urls,
+                        "videoUrls": video_urls,
+                        "title": data.get("title")
+                    }
+        except Exception:
+            continue
     raise Exception("RapidAPI failed")
 
 async def fetch_fastest_stream_urls(v: str):
-    """Siaを優先せず、全APIを対等に並列実行して最速のストリームURLを取得する"""
     cache_key = f"fastest_stream:{v}"
 
     async def _do_fetch():
@@ -427,7 +465,6 @@ async def fetch_fastest_stream_urls(v: str):
     return await fetch_with_inflight(cache_key, _do_fetch, ttl=120.0)
 
 async def fetch_sia_comments(v: str):
-    """Sia API (https://siatube.com/api/comments?videoId={v}) からコメントを取得する"""
     try:
         url = f"https://siatube.com/api/comments?videoId={v}"
         resp = await client_session.get(url, timeout=3.5)
@@ -440,13 +477,11 @@ async def fetch_sia_comments(v: str):
     raise Exception("Sia comments failed")
 
 async def fetch_comments(v: str, force_instance: str = None):
-    """コメント取得: Sia APIを最優先し、3秒経過または失敗時にInvidiousへ並列フォールバック"""
     cache_key = f"comments:{v}:{force_instance or ''}"
 
     async def _do_fetch():
         sia_task = asyncio.create_task(fetch_sia_comments(v))
         
-        # 3秒間 Sia API の結果を待機
         done, pending = await asyncio.wait([sia_task], timeout=3.0)
         
         if sia_task in done:
@@ -457,8 +492,7 @@ async def fetch_comments(v: str, force_instance: str = None):
             except Exception:
                 pass
 
-        # 3秒経過してもSiaが終わらない、またはSiaが失敗した場合にInvidiousを並列起動
-        invidious_task = asyncio.create_task(fetch_invidious(f"/comments/{v}", force_instance=force_instance))
+        invidious_task = asyncio.create_task(fetch_invidious(f"/comments/{v}", force_instance=force_instance, list_type="video"))
         
         remaining_tasks = [t for t in [sia_task, invidious_task] if not t.done()]
         
@@ -480,7 +514,6 @@ async def fetch_comments(v: str, force_instance: str = None):
     return await fetch_with_inflight(cache_key, _do_fetch, ttl=180.0)
 
 async def fetch_sia_channel(ucid: str):
-    """Sia API (https://siatube.com/api/channel/{ucid}) からチャンネル情報を最優先で取得する"""
     try:
         url = f"https://siatube.com/api/channel/{ucid}"
         resp = await client_session.get(url, timeout=3.0)
@@ -493,7 +526,6 @@ async def fetch_sia_channel(ucid: str):
     raise Exception("Sia channel failed")
 
 def extract_invidious_streams(v_data: dict):
-    """InvidiousのメタデータからストリームURLを抽出するユーティリティ関数"""
     if not v_data:
         return {"streamUrls": [], "videoUrls": []}
 
@@ -534,7 +566,6 @@ def extract_invidious_streams(v_data: dict):
     }
 
 def process_comments(comment_data):
-    """コメントリストを整形し、Sia APIおよびInvidious双方のレスポンスに対応する"""
     if isinstance(comment_data, Exception) or not comment_data:
         return []
     
@@ -546,7 +577,6 @@ def process_comments(comment_data):
             continue
         item = dict(c)
 
-        # 著者情報（Sia APIとInvidious両対応）
         author_obj = item.get("author")
         if isinstance(author_obj, dict):
             item["author"] = author_obj.get("name", "")
@@ -559,7 +589,6 @@ def process_comments(comment_data):
             else:
                 item["authorIcon"] = item.get("authorIcon") or item.get("avatar", "")
 
-        # Sia APIで取得したコメントに avatar キーが直接含まれる場合の取得強化
         if "avatar" in item and item["avatar"]:
             item["authorIcon"] = item["avatar"]
         elif isinstance(author_obj, dict) and author_obj.get("avatar"):
@@ -568,7 +597,6 @@ def process_comments(comment_data):
         elif "authorIcon" in item and item["authorIcon"]:
             item["avatar"] = item["authorIcon"]
 
-        # コメント本文の整形（Sia: text, Invidious: content/contentHtml）
         if "text" in item and "contentHtml" not in item and "content" not in item:
             text_str = item.get("text", "")
             item["content"] = text_str
@@ -578,11 +606,9 @@ def process_comments(comment_data):
         elif "content" in item and "contentHtml" not in item:
             item["contentHtml"] = item.get("content", "").replace("\n", "<br>")
 
-        # 投稿時間の整形（Sia: publishedTime, Invidious: publishedText）
         if "publishedTime" in item and "publishedText" not in item:
             item["publishedText"] = item.get("publishedTime", "")
 
-        # 高評価数の整形（Sia: likes.count, Invidious: likeCount）
         likes_obj = item.get("likes")
         if isinstance(likes_obj, dict):
             item["likeCount"] = likes_obj.get("count", 0)
@@ -603,9 +629,10 @@ async def search(request: Request, q: str = Query(...), page: int = 1, type: str
         params = {"q": query_q, "page": page, "type": search_type}
 
         if force_instance:
-            data = await fetch_invidious("/search", params, force_instance=force_instance)
+            data = await fetch_invidious("/search", params, force_instance=force_instance, list_type="search")
         else:
-            instances = list(INVIDIOUS_INSTANCES)
+            search_instances = await get_invidious_instances_from_url(INVIDIOUS_SEARCH_LIST_URL)
+            instances = list(search_instances)
             random.shuffle(instances)
             target_instances = instances[:4]
             
@@ -631,7 +658,7 @@ async def search(request: Request, q: str = Query(...), page: int = 1, type: str
                 task.cancel()
             
             if data is None:
-                data = await fetch_invidious("/search", params)
+                data = await fetch_invidious("/search", params, list_type="search")
 
         results = [{
             "type": item.get("type"),
@@ -660,7 +687,8 @@ async def search(request: Request, q: str = Query(...), page: int = 1, type: str
     except httpx.TimeoutException:
         return templates.TemplateResponse("apitimeout.html", {"request": request})
     except Exception:
-        return templates.TemplateResponse("apiallerror.html", {"request": request, "instances": INVIDIOUS_INSTANCES})
+        fallback_instances = await get_invidious_instances_from_url(INVIDIOUS_SEARCH_LIST_URL)
+        return templates.TemplateResponse("apiallerror.html", {"request": request, "instances": fallback_instances})
 
 @app.get("/shorts/{v}", response_class=HTMLResponse)
 async def shorts_player(request: Request, v: str, force_instance: str = Query(None)):
@@ -706,7 +734,8 @@ async def shorts_player(request: Request, v: str, force_instance: str = Query(No
     except httpx.TimeoutException:
         return templates.TemplateResponse("apitimeout.html", {"request": request})
     except Exception:
-        return templates.TemplateResponse("apiallerror.html", {"request": request, "instances": INVIDIOUS_INSTANCES})
+        fallback_instances = await get_invidious_instances_from_url(INVIDIOUS_VIDEO_LIST_URL)
+        return templates.TemplateResponse("apiallerror.html", {"request": request, "instances": fallback_instances})
 
 @app.get("/watch", response_class=HTMLResponse)
 async def watch(request: Request, v: str = Query(...), force_instance: str = Query(None)):
@@ -733,7 +762,6 @@ async def watch(request: Request, v: str = Query(...), force_instance: str = Que
             stream_urls = invidious_streams.get("streamUrls", [])
             video_urls = invidious_streams.get("videoUrls", [])
 
-        # 関連動画の抽出（Sia APIとInvidious双方に対応）
         recommended = []
         raw_recs = v_data.get("recommendedVideos", [])
         for rec in raw_recs:
@@ -747,7 +775,6 @@ async def watch(request: Request, v: str = Query(...), force_instance: str = Que
                 "thumbnail": rec.get("thumbnail", "")
             })
 
-        # チャンネルアイコンの抽出（Sia APIとInvidious双方に対応）
         author_icon = v_data.get("authorIcon")
         if not author_icon:
             author_thumbs = v_data.get("authorThumbnails", [])
@@ -799,7 +826,8 @@ async def watch(request: Request, v: str = Query(...), force_instance: str = Que
     except httpx.TimeoutException:
         return templates.TemplateResponse("apitimeout.html", {"request": request})
     except Exception:
-        return templates.TemplateResponse("apiallerror.html", {"request": request, "instances": INVIDIOUS_INSTANCES})
+        fallback_instances = await get_invidious_instances_from_url(INVIDIOUS_VIDEO_LIST_URL)
+        return templates.TemplateResponse("apiallerror.html", {"request": request, "instances": fallback_instances})
 
 @app.get("/history", response_class=HTMLResponse)
 async def history_page(request: Request):
@@ -819,7 +847,7 @@ async def clear_history():
 @app.get("/playlist", response_class=HTMLResponse)
 async def playlist(request: Request, list: str = Query(...), force_instance: str = Query(None)):
     try:
-        data = await fetch_invidious(f"/playlists/{list}", force_instance=force_instance)
+        data = await fetch_invidious(f"/playlists/{list}", force_instance=force_instance, list_type="video")
         return templates.TemplateResponse("playlist.html", {
             "request": request,
             "title": data.get("title"),
@@ -832,7 +860,8 @@ async def playlist(request: Request, list: str = Query(...), force_instance: str
     except httpx.TimeoutException:
         return templates.TemplateResponse("apitimeout.html", {"request": request})
     except Exception:
-        return templates.TemplateResponse("apiallerror.html", {"request": request, "instances": INVIDIOUS_INSTANCES})
+        fallback_instances = await get_invidious_instances_from_url(INVIDIOUS_VIDEO_LIST_URL)
+        return templates.TemplateResponse("apiallerror.html", {"request": request, "instances": fallback_instances})
 
 @app.get("/channel/{ucid}", response_class=HTMLResponse)
 async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str = "videos", force_instance: str = Query(None)):
@@ -855,11 +884,11 @@ async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str
                     pass
 
             tasks = [
-                fetch_invidious(f"/channels/{ucid}", force_instance=force_instance),
-                fetch_invidious(f"/channels/{ucid}/videos", {"sort_by": sort_by}, force_instance=force_instance),
-                fetch_invidious(f"/channels/{ucid}/shorts", force_instance=force_instance),
-                fetch_invidious(f"/channels/{ucid}/playlists", force_instance=force_instance),
-                fetch_invidious(f"/channels/{ucid}/community", force_instance=force_instance)
+                fetch_invidious(f"/channels/{ucid}", force_instance=force_instance, list_type="search"),
+                fetch_invidious(f"/channels/{ucid}/videos", {"sort_by": sort_by}, force_instance=force_instance, list_type="search"),
+                fetch_invidious(f"/channels/{ucid}/shorts", force_instance=force_instance, list_type="search"),
+                fetch_invidious(f"/channels/{ucid}/playlists", force_instance=force_instance, list_type="search"),
+                fetch_invidious(f"/channels/{ucid}/community", force_instance=force_instance, list_type="search")
             ]
             
             results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -948,14 +977,16 @@ async def channel(request: Request, ucid: str, sort_by: str = "newest", tab: str
     except httpx.TimeoutException:
         return templates.TemplateResponse("apitimeout.html", {"request": request})
     except Exception:
-        return templates.TemplateResponse("apiallerror.html", {"request": request, "instances": INVIDIOUS_INSTANCES})
+        fallback_instances = await get_invidious_instances_from_url(INVIDIOUS_SEARCH_LIST_URL)
+        return templates.TemplateResponse("apiallerror.html", {"request": request, "instances": fallback_instances})
 
 @app.get("/suggest")
 async def suggest(keyword: str):
     cache_key = f"suggest:{keyword}"
 
     async def _do_fetch():
-        instances = list(INVIDIOUS_INSTANCES)
+        search_instances = await get_invidious_instances_from_url(INVIDIOUS_SEARCH_LIST_URL)
+        instances = list(search_instances)
         random.shuffle(instances)
         for instance in instances:
             try:
@@ -1026,7 +1057,8 @@ async def read_status(request: Request):
         except:
             return {"instance": instance, "status": "Offline", "latency": "-", "version": "-", "users": "-"}
 
-    status_results = await asyncio.gather(*(check_instance(inst) for inst in INVIDIOUS_INSTANCES))
+    video_instances = await get_invidious_instances_from_url(INVIDIOUS_VIDEO_LIST_URL)
+    status_results = await asyncio.gather(*(check_instance(inst) for inst in video_instances))
     return templates.TemplateResponse("status.html", {"request": request, "instances": status_results})
 
 @app.get("/subscriptions", response_class=HTMLResponse)
