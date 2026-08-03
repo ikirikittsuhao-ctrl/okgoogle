@@ -694,7 +694,43 @@ def process_comments(comment_data):
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    return templates.TemplateResponse("home.html", {"request": request})
+    try:
+        search_history_json = request.cookies.get("search_history", "[]")
+        search_history = json.loads(search_history_json)
+    except:
+        search_history = []
+
+    # 過去5回の検索キーワードからおすすめ動画を取得
+    recent_keywords = search_history[-5:] if search_history else ["ボカロ", "VTuber", "ゲーム実況", "音楽", "ニュース"]
+    
+    async def fetch_keyword_results(kw):
+        try:
+            res = await fetch_invidious("/search", {"q": kw, "page": 1, "type": "video"}, list_type="search")
+            if isinstance(res, list):
+                return [item for item in res if item.get("type") == "video" and item.get("videoId")]
+        except:
+            pass
+        return []
+
+    tasks = [fetch_keyword_results(kw) for kw in recent_keywords]
+    results_list = await asyncio.gather(*tasks)
+
+    recommended_videos = []
+    seen_ids = set()
+    for res in results_list:
+        for item in res:
+            vid = item.get("videoId")
+            if vid and vid not in seen_ids:
+                seen_ids.add(vid)
+                recommended_videos.append(item)
+
+    random.shuffle(recommended_videos)
+    recommended_videos = recommended_videos[:24]
+
+    return templates.TemplateResponse("home.html", {
+        "request": request,
+        "recommended_videos": recommended_videos
+    })
 
 @app.get("/search", response_class=HTMLResponse)
 async def search(request: Request, q: str = Query(...), page: int = 1, type: str = "video", force_instance: str = Query(None)):
@@ -751,14 +787,29 @@ async def search(request: Request, q: str = Query(...), page: int = 1, type: str
             "subCountText": item.get("subCountText"),
             "videoCount": item.get("videoCount")
         } for item in data]
-            
-        return templates.TemplateResponse("search.html", {
+
+        response = templates.TemplateResponse("search.html", {
             "request": request, 
             "query": q, 
             "results": results,
             "type": type,
             "page": page
         })
+
+        # 検索キーワードをCookie(search_history)に直近5回分保存
+        try:
+            search_history_json = request.cookies.get("search_history", "[]")
+            search_history = json.loads(search_history_json)
+            if q in search_history:
+                search_history.remove(q)
+            search_history.append(q)
+            if len(search_history) > 5:
+                search_history = search_history[-5:]
+            response.set_cookie(key="search_history", value=json.dumps(search_history), max_age=2592000, httponly=True)
+        except:
+            pass
+            
+        return response
     except httpx.TimeoutException:
         return templates.TemplateResponse("apitimeout.html", {"request": request})
     except Exception:
