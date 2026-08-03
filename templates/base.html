@@ -7,12 +7,10 @@
     <title>{% block title %}仙人Tube{% endblock %}</title>
     <link rel="icon" href="/img/logo/favicon.ico">
     
-    <!-- フォント & Material Symbols / Icons -->
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap">
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
-    <!-- jQuery & jQuery UI -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
     <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
@@ -118,8 +116,8 @@
             display: flex;
             align-items: center;
             flex: 0 1 732px;
-            gap: 12px;
-            margin: 0 16px;
+            gap: 0;
+            margin: 0 8px 0 8px; /* ロゴとの間隔を小さく変更 */
         }
 
         .search-form {
@@ -165,11 +163,6 @@
             justify-content: center;
         }
         .search-btn:hover { background-color: var(--yt-hover-bg); }
-
-        .voice-btn {
-            background-color: var(--yt-search-btn-bg);
-            flex-shrink: 0;
-        }
 
         .header-end {
             display: flex;
@@ -229,6 +222,11 @@
             border-radius: 10px;
             font-size: 14px;
             transition: background 0.2s;
+            cursor: pointer;
+            border: none;
+            background: none;
+            width: 100%;
+            text-align: left;
         }
 
         .nav-item:hover { background-color: var(--yt-hover-bg); }
@@ -239,6 +237,11 @@
 
         .nav-item .material-symbols-outlined {
             font-size: 24px;
+        }
+
+        /* サイドバー展開用メニュー */
+        .more-items {
+            display: none;
         }
 
         #yt-main {
@@ -279,39 +282,68 @@
             display: flex;
         }
 
-        /* jQuery UI Autocomplete Overrides */
+        /* YouTube Official-Style Autocomplete Overrides (UI強化) */
         .ui-autocomplete {
-            background-color: var(--yt-search-bg) !important;
+            background-color: #212121 !important;
             border: 1px solid var(--yt-border-color) !important;
             border-radius: 12px !important;
             color: var(--yt-text-primary) !important;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-            max-width: 600px;
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+            padding: 8px 0 !important;
+            margin-top: 4px;
+            font-family: inherit;
+            z-index: 1050 !important;
+        }
+        .ui-menu-item {
+            list-style: none !important;
+            padding: 0 4px !important;
+        }
+        .ui-menu-item-wrapper {
+            padding: 6px 12px !important;
+            display: flex !important;
+            align-items: center !important;
+            gap: 16px;
+            font-size: 15px;
+            font-weight: 400;
+            color: var(--yt-text-primary) !important;
+            border: none !important;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.1s ease;
         }
         .ui-menu-item-wrapper.ui-state-active {
-            background-color: var(--yt-hover-bg) !important;
-            border: none !important;
-            color: var(--yt-text-primary) !important;
+            background-color: rgba(255, 255, 255, 0.15) !important;
+            margin: 0 !important;
+            font-weight: 500;
         }
-
-        /* Responsive */
-        @media (max-width: 792px) {
-            #yt-sidebar { transform: translateX(-100%); }
-            #yt-sidebar.mobile-open { transform: translateX(0); width: 240px; }
-            #yt-main { margin-left: 0 !important; padding: 12px; }
+        .suggest-item-content {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .suggest-item-content .suggest-icon {
+            font-size: 20px;
+            color: var(--yt-text-secondary);
+            flex-shrink: 0;
+        }
+        .suggest-item-content .suggest-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
     </style>
     {% block extra_css %}{% endblock %}
 </head>
 <body>
 
-    <!-- YouTube Top Header -->
     <header id="yt-header">
         <div class="header-start">
             <button class="icon-btn" id="menu-toggle" title="ナビゲーション">
                 <span class="material-symbols-outlined">menu</span>
             </button>
-            <!-- YouTubeロゴ (アイコンのみ) -->
             <a href="/" class="yt-logo-icon" title="ホーム">
                 <svg viewBox="0 0 68 48" width="30" height="22">
                     <path d="M66.52,7.74c-0.78-2.93-2.49-5.41-5.42-6.19C55.79,.13,34,0,34,0S12.21,.13,6.9,1.55 C3.97,2.33,2.27,4.81,1.48,7.74C0.06,13.05,0,24,0,24s0.06,10.95,1.48,16.26c0.78,2.93,2.49,5.41,5.42,6.19 C12.21,47.87,34,48,34,48s21.79-0.13,27.1-1.55c2.93-0.78,4.64-3.26,5.42-6.19C67.94,34.95,68,24,68,24S67.94,13.05,66.52,7.74z" fill="#FF0000"/>
@@ -329,22 +361,14 @@
                     <span class="material-symbols-outlined">search</span>
                 </button>
             </form>
-            <button class="icon-btn voice-btn" title="音声で検索">
-                <span class="material-symbols-outlined">mic</span>
-            </button>
         </div>
 
         <div class="header-end">
-            <button class="icon-btn" title="作成"><span class="material-symbols-outlined">video_call</span></button>
-            <button class="icon-btn" title="通知"><span class="material-symbols-outlined">notifications</span></button>
-            <button class="icon-btn" title="アカウント"><span class="material-symbols-outlined">account_circle</span></button>
         </div>
     </header>
 
-    <!-- Layout Wrapper -->
     <div class="yt-container">
-        <!-- Sidebar Navigation -->
-        <aside id="yt-sidebar">
+        <aside id="yt-sidebar" class="collapsed">
             <div class="nav-section">
                 <a href="/" class="nav-item active">
                     <span class="material-symbols-outlined">home</span>
@@ -369,24 +393,30 @@
                     <span class="material-symbols-outlined">handyman</span>
                     <span>Tools</span>
                 </a>
-                <a href="/bbs" class="nav-item">
-                    <span class="material-symbols-outlined">forum</span>
-                    <span>掲示板</span>
-                </a>
-                <a href="/status" class="nav-item">
-                    <span class="material-symbols-outlined">analytics</span>
-                    <span>稼働状況</span>
-                </a>
+                
+                <button class="nav-item" id="toggle-more-btn">
+                    <span class="material-symbols-outlined" id="more-icon">expand_more</span>
+                    <span id="more-label">その他</span>
+                </button>
+
+                <div class="more-items" id="more-items-container">
+                    <a href="/bbs" class="nav-item">
+                        <span class="material-symbols-outlined">forum</span>
+                        <span>掲示板</span>
+                    </a>
+                    <a href="/status" class="nav-item">
+                        <span class="material-symbols-outlined">analytics</span>
+                        <span>稼働状況</span>
+                    </a>
+                </div>
             </div>
         </aside>
 
-        <!-- Main Content Block -->
-        <main id="yt-main">
+        <main id="yt-main" class="expanded">
             {% block content %}{% endblock %}
         </main>
     </div>
 
-    <!-- Status Notice (Dynamic Banner) -->
     <div class="status-toast" id="statusToast">
         <span class="material-symbols-outlined" style="color:#ff4e4e;">info</span>
         <span id="infoContent">仙人Tubeへようこそ</span>
@@ -405,16 +435,62 @@
                 }
             });
 
-            // 検索オートコンプリート
-            $('#searchbox').autocomplete({
-                source: function (request, response) {
-                    $.getJSON("/suggest?keyword=" + encodeURIComponent(request.term), function(data) {
-                        response(data);
-                    });
-                },
-                delay: 100,
-                minLength: 1
+            // サイドバーの「その他」アコーディオン展開切り替え
+            $("#toggle-more-btn").click(function () {
+                $("#more-items-container").slideToggle(150);
+                const $icon = $("#more-icon");
+                if ($icon.text() === "expand_more") {
+                    $icon.text("expand_less");
+                } else {
+                    $icon.text("expand_more");
+                }
             });
+
+            // 検索オートコンプリート（高速化＆UI強化）
+            const suggestCache = {};
+            let currentXhr = null;
+
+            $('#searchbox').autocomplete({
+                delay: 0, // 入力即時反応で高速化
+                minLength: 1,
+                source: function (request, response) {
+                    const term = request.term.trim();
+                    if (term in suggestCache) {
+                        response(suggestCache[term]);
+                        return;
+                    }
+
+                    // 前回実行中のリクエストがあれば中止して高速化
+                    if (currentXhr) {
+                        currentXhr.abort();
+                    }
+
+                    currentXhr = $.ajax({
+                        url: "/suggest",
+                        dataType: "json",
+                        data: { keyword: term },
+                        success: function (data) {
+                            suggestCache[term] = data;
+                            response(data);
+                        },
+                        error: function (jqXHR, textStatus) {
+                            if (textStatus !== 'abort') {
+                                response([]);
+                            }
+                        }
+                    });
+                }
+            }).autocomplete("instance")._renderItem = function(ul, item) {
+                const label = typeof item === "string" ? item : item.label;
+                return $("<li>")
+                    .append(`
+                        <div class="suggest-item-content">
+                            <span class="material-symbols-outlined suggest-icon">search</span>
+                            <span class="suggest-text">${label}</span>
+                        </div>
+                    `)
+                    .appendTo(ul);
+            };
 
             // 通知トーストメッセージの更新処理
             const messages = [
