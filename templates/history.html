@@ -1,102 +1,278 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>再生履歴 - 仙人Tube+</title>
-    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <style>
-        :root {
-            --primary-color: #007bff;
-            --bg-light: #fdfdfd;
-            --text-dark: #333333;
-            --card-bg: #ffffff;
-            --border-color: #e5e5e5;
-        }
-        @media (prefers-color-scheme: dark) {
-            :root {
-                --bg-light: #121212;
-                --text-dark: #e0e0e0;
-                --glass-bg: rgba(30, 30, 30, 0.85);
-                --card-bg: #252525;
-                --border-color: #333;
-            }
-        }
+{% extends "base.html" %}
 
-        body { font-family: 'Noto Sans JP', sans-serif; margin: 0; background-color: var(--bg-light); color: var(--text-dark); padding-top: 80px; }
-        
-        #top-bar {
-            position: fixed; top: 0; left: 0; width: 100%;
-            background: rgba(255,255,255,0.85); backdrop-filter: blur(10px);
-            z-index: 1000; padding: 12px 25px; display: flex; align-items: center;
-            box-shadow: 0 2px 15px rgba(0,0,0,0.05); box-sizing: border-box;
-        }
-        @media (prefers-color-scheme: dark) { #top-bar { background: rgba(30,30,30,0.85); } }
+{% block title %}再生履歴 - 仙人Tube+{% endblock %}
 
-        /* ロゴの「+」を青くする設定 */
-        .logo-small sup { color: var(--primary-color); font-size: 0.6em; }
+{% block extra_css %}
+<style>
+    /* --- YouTube Official Feed/History Page UI --- */
+    .history-container {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 16px 24px;
+    }
 
-        .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
-        .header-flex { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
-        
-        .history-list { display: flex; flex-direction: column; gap: 15px; }
+    /* ページヘッダー */
+    .history-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-bottom: 16px;
+        margin-bottom: 24px;
+        border-bottom: 1px solid var(--yt-border-color, #e5e5e5);
+    }
+
+    .history-header-title {
+        font-size: 24px;
+        font-weight: 700;
+        margin: 0;
+        color: var(--yt-text-primary, #0f0f0f);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .history-header-title i {
+        color: var(--yt-text-primary, #0f0f0f);
+        font-size: 22px;
+    }
+
+    /* 一括削除ボタン */
+    .clear-btn {
+        background-color: transparent;
+        color: var(--yt-text-primary, #0f0f0f);
+        border: 1px solid var(--yt-border-color, #ccc);
+        padding: 8px 16px;
+        border-radius: 18px;
+        cursor: pointer;
+        text-decoration: none;
+        font-weight: 500;
+        font-size: 14px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        transition: background-color 0.2s, border-color 0.2s;
+    }
+
+    .clear-btn:hover {
+        background-color: var(--yt-hover-bg, rgba(0, 0, 0, 0.05));
+        border-color: transparent;
+    }
+
+    /* リストレイアウト */
+    .history-list {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        max-width: 1096px;
+    }
+
+    /* 個別履歴アイテム (YouTube横型カード風) */
+    .history-item {
+        display: flex;
+        gap: 16px;
+        background: transparent;
+        padding: 0;
+        border-radius: 12px;
+        text-decoration: none;
+        color: inherit;
+        transition: background-color 0.15s ease;
+    }
+
+    .thumb-wrapper {
+        position: relative;
+        width: 246px;
+        min-width: 246px;
+        aspect-ratio: 16 / 9;
+        border-radius: 12px;
+        overflow: hidden;
+        background-color: var(--yt-chip-bg, #e5e5e5);
+        flex-shrink: 0;
+    }
+
+    .thumb {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+        padding: 4px 0;
+        min-width: 0;
+    }
+
+    .title {
+        font-size: 18px;
+        font-weight: 500;
+        line-height: 1.4;
+        margin-bottom: 6px;
+        color: var(--yt-text-primary, #0f0f0f);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .meta {
+        font-size: 12px;
+        color: var(--yt-text-secondary, #606060);
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .meta-author {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: var(--yt-text-secondary, #606060);
+    }
+
+    .meta-time {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        color: var(--yt-text-secondary, #606060);
+        margin-top: 4px;
+    }
+
+    /* 空の状態 (Empty State) */
+    .empty-msg {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 80px 20px;
+        text-align: center;
+    }
+
+    .empty-icon-circle {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        background-color: var(--yt-hover-bg, rgba(0, 0, 0, 0.05));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 24px;
+    }
+
+    .empty-icon-circle i {
+        font-size: 48px;
+        color: var(--yt-text-secondary, #606060);
+    }
+
+    .empty-msg p {
+        font-size: 16px;
+        color: var(--yt-text-secondary, #606060);
+        margin: 0 0 24px 0;
+    }
+
+    .btn-explore {
+        background-color: var(--yt-chip-active-bg, #0f0f0f);
+        color: var(--yt-chip-active-text, #ffffff);
+        padding: 10px 20px;
+        border-radius: 20px;
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        transition: opacity 0.2s;
+    }
+
+    .btn-explore:hover {
+        opacity: 0.9;
+    }
+
+    /* レスポンシブ対応 */
+    @media (max-width: 650px) {
         .history-item {
-            display: flex; gap: 20px; background: var(--card-bg); padding: 15px;
-            border-radius: 15px; border: 1px solid var(--border-color);
-            text-decoration: none; color: inherit; transition: transform 0.2s;
+            flex-direction: column;
+            gap: 8px;
         }
-        .history-item:hover { transform: scale(1.01); border-color: var(--primary-color); }
-        .thumb { width: 200px; aspect-ratio: 16/9; border-radius: 10px; object-fit: cover; }
-        
-        .info { flex: 1; }
-        .title { font-size: 1.1rem; font-weight: 700; margin-bottom: 5px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-        .meta { font-size: 0.85rem; color: #888; }
-        
-        .clear-btn {
-            background: #ff4d4f; color: white; border: none; padding: 10px 20px;
-            border-radius: 50px; cursor: pointer; text-decoration: none; font-weight: 700; font-size: 0.9rem;
+
+        .thumb-wrapper {
+            width: 100%;
+            min-width: 100%;
         }
-        .empty-msg { text-align: center; margin-top: 100px; color: #888; }
-    </style>
-</head>
-<body>
-    <header id="top-bar">
-        <div class="logo-small" onclick="location.href='/'" style="cursor:pointer; font-weight:700; font-size:1.5rem;">
-            仙人Tube<sup>+</sup>
-        </div>
-    </header>
 
-    <main class="container">
-        <div class="header-flex">
-            <h1><i class="fas fa-history" style="margin-right:10px; color:var(--primary-color);"></i>再生履歴</h1>
-            {% if history %}
-            <a href="/history/clear" class="clear-btn" onclick="return confirm('履歴をすべて削除しますか？')">すべて削除</a>
-            {% endif %}
-        </div>
+        .title {
+            font-size: 15px;
+        }
+    }
+</style>
+{% endblock %}
 
-        <div class="history-list">
-            {% for item in history %}
-            <a href="/watch?v={{ item.videoId }}" class="history-item">
-                <img src="/thumbnail?v={{ item.videoId }}" class="thumb">
-                <div class="info">
-                    <div class="title">{{ item.title }}</div>
-                    <div class="meta">
-                        <div><i class="fas fa-user"></i> {{ item.author }}</div>
-                        <div><i class="fas fa-clock"></i> {{ item.added_at }}</div>
+{% block content %}
+<div class="history-container">
+    <div class="history-header">
+        <h1 class="history-header-title">
+            <i class="fas fa-history"></i>
+            再生履歴
+        </h1>
+        {% if history %}
+        <a href="/history/clear" class="clear-btn" onclick="return confirm('再生履歴をすべて削除しますか？')">
+            <i class="fas fa-trash-alt"></i>
+            すべての再生履歴を消去
+        </a>
+        {% endif %}
+    </div>
+
+    <div class="history-list">
+        {% for item in history %}
+        <a href="/watch?v={{ item.videoId }}" class="history-item">
+            <div class="thumb-wrapper">
+                <img src="/thumbnail?v={{ item.videoId }}" class="thumb" alt="{{ item.title }}">
+            </div>
+            <div class="info">
+                <div class="title">{{ item.title }}</div>
+                <div class="meta">
+                    <div class="meta-author">
+                        <i class="fas fa-user-circle"></i>
+                        <span>{{ item.author }}</span>
+                    </div>
+                    <div class="meta-time">
+                        <i class="far fa-clock"></i>
+                        <span>{{ item.added_at }}</span>
                     </div>
                 </div>
-            </a>
-            {% endfor %}
-
-            {% if not history %}
-            <div class="empty-msg">
-                <i class="fas fa-ghost fa-3x" style="margin-bottom:20px;"></i>
-                <p>履歴はありません</p>
-                <a href="/" style="color:var(--primary-color);">動画を探しに行く</a>
             </div>
-            {% endif %}
+        </a>
+        {% endfor %}
+
+        {% if not history %}
+        <div class="empty-msg">
+            <div class="empty-icon-circle">
+                <i class="fas fa-history"></i>
+            </div>
+            <p>再生履歴はありません</p>
+            <a href="/" class="btn-explore">
+                <i class="fas fa-search"></i>
+                動画を探しに行く
+            </a>
         </div>
-    </main>
-</body>
-</html>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // サイドバーのアクティブ化（サイドバーが存在する場合）
+        const sidebarHistory = document.querySelector('#yt-sidebar a[href="/history"]');
+        if (sidebarHistory) {
+            document.querySelectorAll('#yt-sidebar .nav-item').forEach(el => el.classList.remove('active'));
+            sidebarHistory.classList.add('active');
+        }
+    });
+</script>
+{% endblock %}
