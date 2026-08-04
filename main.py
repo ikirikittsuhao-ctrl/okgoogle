@@ -353,6 +353,7 @@ def normalize_sennin_comments(sennin_data: dict) -> list:
             "authorId": author_id,
             "authorIcon": author_icon,
             "authorThumbnail": author_icon,
+            "authorThumbnails": [{"url": author_icon}] if author_icon else [],
             "content": text_content,
             "contentHtml": text_content.replace("\n", "<br>"),
             "publishedTime": c.get("publishedTime", ""),
@@ -852,6 +853,13 @@ def process_comments(comment_data):
             item["avatar"] = item["authorIcon"]
             item["authorThumbnail"] = item["authorIcon"]
 
+        if not item.get("authorThumbnails") or not isinstance(item.get("authorThumbnails"), list):
+            icon_url = item.get("authorIcon") or item.get("authorThumbnail") or item.get("avatar") or ""
+            if icon_url:
+                item["authorThumbnails"] = [{"url": icon_url}]
+            else:
+                item["authorThumbnails"] = []
+
         if "text" in item and "contentHtml" not in item and "content" not in item:
             text_str = item.get("text", "")
             item["content"] = text_str
@@ -861,8 +869,14 @@ def process_comments(comment_data):
         elif "content" in item and "contentHtml" not in item:
             item["contentHtml"] = item.get("content", "").replace("\n", "<br>")
 
+        if not item.get("contentHtml"):
+            text_str = item.get("text") or item.get("content") or ""
+            item["contentHtml"] = text_str.replace("\n", "<br>")
+
         if "publishedTime" in item and "publishedText" not in item:
             item["publishedText"] = item.get("publishedTime", "")
+        elif "publishedText" not in item:
+            item["publishedText"] = item.get("published", "") or item.get("publishedTime", "")
 
         likes_obj = item.get("likes")
         if isinstance(likes_obj, dict):
