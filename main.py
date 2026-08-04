@@ -34,11 +34,13 @@ PIPED_INSTANCES = [
     "https://pipedapi.winscloud.net"
 ]
 
+SENNIN_API_BASE = "discerning-adventure-production-ebfc.up.railway.app"
+
 RAPID_API_HOST = "ytstream-download-youtube-videos.p.rapidapi.com"
 
 _ENCRYPTED_KEYS = [
     "ZTYxNTE4MzAzNG1zaDJkZmRhMzFhNDdhNmYxMnAxZmE2Y2Nqc241OWExYTVlMDY0MTU=",
-    "NjllMjk5NWE3OW1zaGNiNjU3MTg0YmE2NzMxY3AxNmY2ODRqc24zMjA1NGEwNzBiYTU="
+    "NjllMjk5OWE3OW1zaGNiNjU3MTg0YmE2NzMxY3AxNmY2ODRqc24zMjA1NGEwNzBiYTU="
 ]
 
 def _get_rapid_api_keys():
@@ -232,6 +234,68 @@ async def fetch_invidious(endpoint: str, params: dict = None, force_instance: st
 
     return await fetch_with_inflight(cache_key, _do_fetch, ttl=180.0)
 
+
+# ===== Sennin API (Node.js Comments API) =====
+async def fetch_sennin_comments(v: str, sort: str = "top"):
+    """Sennin APIからコメント取得"""
+    try:
+        url = f"{SENNIN_API_BASE}/api/comments"
+        params = {"videoId": v, "sort": sort}
+        resp = await client_session.get(url, params=params, timeout=4.0)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:
+        pass
+    raise Exception("Sennin comments failed")
+
+
+async def fetch_sennin_video_info(v: str):
+    """Sennin APIからビデオ情報取得（コメント付き）"""
+    try:
+        url = f"{SENNIN_API_BASE}/api/video/{v}"
+        resp = await client_session.get(url, timeout=4.0)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:
+        pass
+    raise Exception("Sennin video info failed")
+
+
+def normalize_sennin_comments(sennin_data: dict) -> list:
+    """
+    Sennin APIレスポンス形式を標準フォーマットに正規化
+    """
+    if not sennin_data or not isinstance(sennin_data, dict):
+        return []
+    
+    comments = sennin_data.get("comments", [])
+    if not isinstance(comments, list):
+        return []
+    
+    processed = []
+    for c in comments:
+        if not isinstance(c, dict):
+            continue
+        
+        # Sennin形式を標準フォーマットに変換
+        processed.append({
+            "commentId": c.get("commentId"),
+            "author": c.get("author", {}).get("name") or c.get("author"),
+            "authorId": c.get("author", {}).get("channelId") if isinstance(c.get("author"), dict) else c.get("authorId", ""),
+            "authorIcon": c.get("author", {}).get("avatar") if isinstance(c.get("author"), dict) else c.get("authorIcon", ""),
+            "content": c.get("text") or c.get("content", ""),
+            "contentHtml": (c.get("text") or c.get("content", "")).replace("\n", "<br>"),
+            "publishedTime": c.get("publishedTime"),
+            "publishedText": c.get("publishedTime"),  # Sennin形式では publishedTime が存在
+            "likeCount": c.get("likes", {}).get("count") if isinstance(c.get("likes"), dict) else c.get("likes", 0),
+            "replyCount": c.get("replies", {}).get("count") if isinstance(c.get("replies"), dict) else c.get("replies", 0),
+            "isCreator": c.get("author", {}).get("creator") if isinstance(c.get("author"), dict) else False,
+            "isVerified": c.get("author", {}).get("verified") if isinstance(c.get("author"), dict) else False,
+        })
+    
+    return processed
+
+
 async def fetch_sia_video(v: str):
     try:
         url = f"https://siatube.com/api/video/{v}"
@@ -303,8 +367,18 @@ async def fetch_video_info(v: str, force_instance: str = None, api: str = None):
         elif api == "piped":
             piped_res = await fetch_piped_stream(v)
             return piped_res
+        elif api == "sennin":
+            try:
+                return await fetch_sennin_video_info(v)
+            except Exception:
+                return await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
 
         if not force_instance:
+            # デフォルト: Sennin -> Sia -> Invidiousの順で試行
+            try:
+                return await fetch_sennin_video_info(v)
+            except Exception:
+                pass
             try:
                 return await fetch_sia_video(v)
             except Exception:
@@ -504,6 +578,13 @@ async def fetch_fastest_stream_urls(v: str, api: str = None, force_instance: str
         elif api == "invidious":
             v_data = await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
             return extract_invidious_streams(v_data)
+        elif api == "sennin":
+            # Sennin形式では動画URL情報がないため、Sia→Invidiousで取得
+            try:
+                return await fetch_sia_stream(v)
+            except Exception:
+                v_data = await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
+                return extract_invidious_streams(v_data)
 
         tasks = [
             asyncio.create_task(fetch_sia_stream(v)),
@@ -550,12 +631,29 @@ async def fetch_comments(v: str, force_instance: str = None, api: str = None):
                 return await fetch_invidious(f"/comments/{v}", force_instance=force_instance, list_type="video")
         elif api == "invidious":
             return await fetch_invidious(f"/comments/{v}", force_instance=force_instance, list_type="video")
+        elif api == "sennin":
+            try:
+                return await fetch_sennin_comments(v)
+            except Exception:
+                return await fetch_invidious(f"/comments/{v}", force_instance=force_instance, list_type="video")
+
+        # デフォルト: Sennin -> Sia -> Invidiousの順
+        sennin_task = asyncio.create_task(fetch_sennin_comments(v))
+        
+        done, pending = await asyncio.wait([sennin_task], timeout=2.5)
+        
+        if sennin_task in done:
+            try:
+                res = sennin_task.result()
+                if res is not None:
+                    return res
+            except Exception:
+                pass
 
         sia_task = asyncio.create_task(fetch_sia_comments(v))
+        done_sia, pending_sia = await asyncio.wait([sia_task], timeout=2.5)
         
-        done, pending = await asyncio.wait([sia_task], timeout=3.0)
-        
-        if sia_task in done:
+        if sia_task in done_sia:
             try:
                 res = sia_task.result()
                 if res is not None:
@@ -565,7 +663,7 @@ async def fetch_comments(v: str, force_instance: str = None, api: str = None):
 
         invidious_task = asyncio.create_task(fetch_invidious(f"/comments/{v}", force_instance=force_instance, list_type="video"))
         
-        remaining_tasks = [t for t in [sia_task, invidious_task] if not t.done()]
+        remaining_tasks = [t for t in [sennin_task, sia_task, invidious_task] if not t.done()]
         
         while remaining_tasks:
             done_batch, pending_batch = await asyncio.wait(remaining_tasks, return_when=asyncio.FIRST_COMPLETED)
@@ -640,6 +738,11 @@ def process_comments(comment_data):
     if isinstance(comment_data, Exception) or not comment_data:
         return []
     
+    # Sennin形式の場合
+    if isinstance(comment_data, dict) and "comments" in comment_data and isinstance(comment_data.get("comments"), list):
+        return normalize_sennin_comments(comment_data)
+    
+    # Invidious/Sia形式の場合
     comments = comment_data.get("comments", []) if isinstance(comment_data, dict) else (comment_data if isinstance(comment_data, list) else [])
     processed = []
     
