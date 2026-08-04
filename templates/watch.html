@@ -1,38 +1,40 @@
 {% extends "base.html" %}
 
-{% block title %}{{ video_title }} - YouTube{% endblock %}
+{% block title %}{{ video_title if video_title else "読み込み中..." }} - YouTube{% endblock %}
 
 {% block extra_css %}
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <style>
     /* ==========================================================================
-       YouTube Official UI Theme Variables & Base Resets (Dark/Light Supported)
+       YouTube Official Color Tokens & UI Variable Design
        ========================================================================== */
     :root {
-        --yt-spec-base-background: var(--yt-bg, #0f0f0f);
+        --yt-spec-base-background: #0f0f0f;
         --yt-spec-static-overlay-background-solid: #212121;
-        --yt-spec-badge-chip-background: var(--yt-chip-bg, rgba(255, 255, 255, 0.1));
-        --yt-spec-button-chip-hover: var(--yt-hover-bg, rgba(255, 255, 255, 0.2));
-        --yt-spec-text-primary: var(--yt-text-primary, #f1f1f1);
-        --yt-spec-text-secondary: var(--yt-text-secondary, #aaaaaa);
+        --yt-spec-badge-chip-background: rgba(255, 255, 255, 0.1);
+        --yt-spec-button-chip-hover: rgba(255, 255, 255, 0.2);
+        --yt-spec-text-primary: #f1f1f1;
+        --yt-spec-text-secondary: #aaaaaa;
         --yt-spec-brand-subscribe-bg: #f1f1f1;
         --yt-spec-brand-subscribe-text: #0f0f0f;
-        --yt-spec-border-color: var(--yt-border-color, rgba(255, 255, 255, 0.1));
+        --yt-spec-border-color: rgba(255, 255, 255, 0.1);
         --yt-brand-red: #ff0000;
         --yt-font-family: "Roboto", "Arial", sans-serif;
+        --yt-skeleton-bg: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.12) 37%, rgba(255,255,255,0.06) 63%);
     }
 
     @media (prefers-color-scheme: light) {
         :root {
-            --yt-spec-base-background: var(--yt-bg, #ffffff);
+            --yt-spec-base-background: #ffffff;
             --yt-spec-static-overlay-background-solid: #ffffff;
-            --yt-spec-badge-chip-background: var(--yt-chip-bg, rgba(0, 0, 0, 0.05));
-            --yt-spec-button-chip-hover: var(--yt-hover-bg, rgba(0, 0, 0, 0.1));
-            --yt-spec-text-primary: var(--yt-text-primary, #0f0f0f);
-            --yt-spec-text-secondary: var(--yt-text-secondary, #606060);
+            --yt-spec-badge-chip-background: rgba(0, 0, 0, 0.05);
+            --yt-spec-button-chip-hover: rgba(0, 0, 0, 0.1);
+            --yt-spec-text-primary: #0f0f0f;
+            --yt-spec-text-secondary: #606060;
             --yt-spec-brand-subscribe-bg: #0f0f0f;
             --yt-spec-brand-subscribe-text: #ffffff;
-            --yt-spec-border-color: var(--yt-border-color, #e5e5e5);
+            --yt-spec-border-color: #e5e5e5;
+            --yt-skeleton-bg: linear-gradient(90deg, rgba(0,0,0,0.06) 25%, rgba(0,0,0,0.12) 37%, rgba(0,0,0,0.06) 63%);
         }
     }
 
@@ -42,23 +44,31 @@
         font-family: var(--yt-font-family);
         margin: 0;
         padding: 0;
+        -webkit-font-smoothing: antialiased;
     }
 
-    /* Main Container Layout (PC/Tablet Grid Ratio 2 : 0.9) */
+    /* 1. 外枠(base.html)との間隔を短縮（余白を抑えてモダンな公式UIに近接） */
     .yt-watch-page-container {
         display: grid;
-        grid-template-columns: minmax(0, 2fr) minmax(0, 0.9fr);
+        grid-template-columns: minmax(0, 1fr) 402px;
         gap: 24px;
         max-width: 1754px;
         margin: 0 auto;
-        padding: 24px 24px 0 24px;
+        padding: 12px 24px 0 24px; /* 上部・左右の余白を縮小 */
         box-sizing: border-box;
+    }
+
+    @media (max-width: 1200px) {
+        .yt-watch-page-container {
+            grid-template-columns: minmax(0, 1fr) 350px;
+            padding: 8px 16px 0 16px;
+        }
     }
 
     @media (max-width: 1010px) {
         .yt-watch-page-container {
             grid-template-columns: 1fr;
-            padding: 12px 12px 0 12px;
+            padding: 0 0 0 0; /* モバイル時は隙間なし */
         }
     }
 
@@ -67,7 +77,7 @@
         min-width: 0;
     }
 
-    /* Video Player Component */
+    /* ビデオプレイヤー（角丸・シャドウの公式デザイン適用） */
     #player-wrapper {
         position: relative;
         width: 100%;
@@ -75,6 +85,13 @@
         background: #000;
         border-radius: 12px;
         overflow: hidden;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+    }
+
+    @media (max-width: 1010px) {
+        #player-wrapper {
+            border-radius: 0;
+        }
     }
 
     video, iframe {
@@ -91,18 +108,18 @@
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.6);
+        background: rgba(0, 0, 0, 0.7);
         display: none;
         align-items: center;
         justify-content: center;
         z-index: 10;
-        pointer-events: none;
+        backdrop-filter: blur(2px);
     }
 
     .yt-spinner {
         width: 48px;
         height: 48px;
-        border: 4px solid rgba(255, 255, 255, 0.15);
+        border: 4px solid rgba(255, 255, 255, 0.2);
         border-radius: 50%;
         border-top-color: #ffffff;
         animation: yt-spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
@@ -110,17 +127,24 @@
 
     @keyframes yt-spin { to { transform: rotate(360deg); } }
 
-    /* Video Metadata Headers */
+    /* タイトルとボタンアクション群の質感向上 */
     .yt-video-title {
         font-size: 1.25rem;
         font-weight: 700;
-        line-height: 1.4;
+        line-height: 1.35;
         margin: 12px 0 8px 0;
         color: var(--yt-spec-text-primary);
         word-break: break-word;
+        letter-spacing: -0.2px;
     }
 
-    /* Channel & Actions Row */
+    @media (max-width: 1010px) {
+        .yt-video-title, .yt-owner-actions-row, .yt-description-container, .yt-comments-container {
+            padding-left: 12px;
+            padding-right: 12px;
+        }
+    }
+
     .yt-owner-actions-row {
         display: flex;
         justify-content: space-between;
@@ -143,6 +167,7 @@
         border-radius: 50%;
         overflow: hidden;
         flex-shrink: 0;
+        background-color: var(--yt-spec-border-color);
     }
 
     .yt-channel-avatar-link img {
@@ -165,10 +190,6 @@
         line-height: 1.2;
     }
 
-    .yt-channel-name:hover {
-        color: var(--yt-spec-text-primary);
-    }
-
     .yt-channel-subscribers {
         font-size: 0.75rem;
         color: var(--yt-spec-text-secondary);
@@ -189,14 +210,13 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        transition: background-color 0.2s;
+        transition: background-color 0.2s, opacity 0.2s;
     }
 
     .yt-subscribe-btn:hover {
         opacity: 0.9;
     }
 
-    /* Actions Pill Group */
     .yt-actions-group {
         display: flex;
         align-items: center;
@@ -204,7 +224,6 @@
         flex-wrap: wrap;
     }
 
-    /* YouTube Official Like / Dislike Segmented Button */
     .yt-like-dislike-group {
         display: inline-flex;
         align-items: center;
@@ -262,11 +281,7 @@
         background-color: var(--yt-spec-button-chip-hover);
     }
 
-    .yt-pill-button i {
-        font-size: 0.95rem;
-    }
-
-    /* Description Card */
+    /* 概要欄カード */
     .yt-description-container {
         background-color: var(--yt-spec-badge-chip-background);
         border-radius: 12px;
@@ -284,121 +299,61 @@
 
     .yt-description-header {
         font-weight: 600;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
         display: flex;
-        gap: 8px;
+        gap: 12px;
     }
 
     .yt-description-body {
         white-space: pre-wrap;
         word-break: break-word;
-        font-size: 0.875rem;
     }
 
-    /* Quality Select Pill Dropdown */
-    .yt-custom-select {
-        position: relative;
-        display: inline-block;
+    /* 2. スケルトンアニメーション (ローディング時に公式同等の枠を表示) */
+    .skeleton-box {
+        background: var(--yt-skeleton-bg);
+        background-size: 400% 100%;
+        animation: skeleton-shimmer 1.5s ease-in-out infinite;
+        border-radius: 6px;
     }
 
-    .yt-select-dropdown {
-        position: absolute;
-        top: calc(100% + 6px);
-        right: 0;
-        background: var(--yt-spec-static-overlay-background-solid);
-        border-radius: 12px;
-        border: 1px solid var(--yt-spec-border-color);
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        display: none;
-        flex-direction: column;
-        min-width: 200px;
-        z-index: 500;
-        overflow: hidden;
+    @keyframes skeleton-shimmer {
+        0% { background-position: 100% 0; }
+        100% { background-position: -100% 0; }
     }
 
-    .yt-custom-select.open .yt-select-dropdown {
+    .skeleton-text {
+        height: 14px;
+        margin-bottom: 6px;
+        border-radius: 4px;
+    }
+
+    .yt-recommend-skeleton-card {
         display: flex;
+        gap: 8px;
+        padding: 4px;
+        margin-bottom: 8px;
     }
 
-    .yt-dropdown-item {
-        padding: 10px 16px;
-        font-size: 0.85rem;
-        color: var(--yt-spec-text-primary);
-        cursor: pointer;
-        transition: background 0.2s;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .yt-dropdown-item:hover {
-        background: var(--yt-spec-button-chip-hover);
-    }
-
-    .yt-dropdown-item.selected {
-        font-weight: 700;
-        background: var(--yt-spec-button-chip-hover);
-    }
-
-    /* Comments Section */
-    .yt-comments-container {
-        margin-top: 24px;
-    }
-
-    .yt-comments-header {
-        font-size: 1.25rem;
-        font-weight: 700;
-        margin-bottom: 24px;
-        display: flex;
-        align-items: center;
-        gap: 24px;
-    }
-
-    .yt-comment-item {
-        display: flex;
-        gap: 16px;
-        margin-bottom: 20px;
-    }
-
-    .yt-comment-avatar {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        object-fit: cover;
+    .yt-recommend-skeleton-thumb {
+        width: 168px;
+        aspect-ratio: 16 / 9;
+        border-radius: 8px;
         flex-shrink: 0;
-        background-color: var(--yt-spec-border-color);
     }
 
-    .yt-comment-content {
+    .yt-recommend-skeleton-info {
+        flex: 1;
         display: flex;
         flex-direction: column;
-        gap: 4px;
+        gap: 6px;
     }
 
-    .yt-comment-author-line {
-        font-size: 0.8rem;
-        font-weight: 600;
-        color: var(--yt-spec-text-primary);
-    }
-
-    .yt-comment-time {
-        font-weight: 400;
-        color: var(--yt-spec-text-secondary);
-        margin-left: 4px;
-    }
-
-    .yt-comment-text {
-        font-size: 0.875rem;
-        line-height: 1.4;
-        color: var(--yt-spec-text-primary);
-        word-break: break-word;
-    }
-
-    /* Secondary Sidebar (Recommendations) */
+    /* サイドバー関連動画 */
     .yt-secondary-column {
         display: flex;
         flex-direction: column;
-        gap: 12px;
+        gap: 8px;
     }
 
     .yt-recommend-card {
@@ -408,11 +363,11 @@
         color: inherit;
         border-radius: 8px;
         padding: 4px;
-        transition: background-color 0.2s;
+        transition: background-color 0.15s ease;
     }
 
     .yt-recommend-card:hover {
-        background-color: var(--yt-spec-badge-chip-background);
+        background-color: var(--yt-spec-button-chip-hover);
     }
 
     .yt-recommend-thumb-wrapper {
@@ -455,18 +410,53 @@
         line-height: 1.3;
     }
 
-    /* YouTube Official Style Modal Overlay */
-    .yt-modal-overlay {
+    /* Dropdown UI Design */
+    .yt-custom-select {
+        position: relative;
+        display: inline-block;
+    }
+
+    .yt-select-dropdown {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        background: var(--yt-spec-static-overlay-background-solid);
+        border-radius: 12px;
+        border: 1px solid var(--yt-spec-border-color);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+        display: none;
+        flex-direction: column;
+        min-width: 200px;
+        z-index: 500;
+        overflow: hidden;
+    }
+
+    .yt-custom-select.open .yt-select-dropdown {
+        display: flex;
+    }
+
+    .yt-dropdown-item {
+        padding: 10px 16px;
+        font-size: 0.85rem;
+        color: var(--yt-spec-text-primary);
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .yt-dropdown-item:hover, .yt-dropdown-item.selected {
+        background: var(--yt-spec-button-chip-hover);
+    }
+
+    /* Modal / Floating UI */
+    .yt-modal-overlay, .yt-bottom-modal-overlay {
         position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
+        top: 0; left: 0; width: 100%; height: 100%;
         background: rgba(0, 0, 0, 0.7);
         z-index: 3000;
         display: none;
         align-items: center;
         justify-content: center;
+        backdrop-filter: blur(4px);
     }
 
     .yt-modal-content {
@@ -490,76 +480,13 @@
         color: var(--yt-spec-text-secondary);
     }
 
-    .yt-dl-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 12px 0;
-        border-bottom: 1px solid var(--yt-spec-border-color);
-    }
-
-    .yt-dl-item:last-child {
-        border-bottom: none;
-    }
-
-    /* Tool Bottom Sheet Modal Overlay */
-    .yt-bottom-modal-overlay {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.7);
-        z-index: 3500;
-        display: none;
-        align-items: flex-end;
-        justify-content: center;
-    }
-
-    .yt-bottom-modal-content {
-        background: var(--yt-spec-static-overlay-background-solid);
-        color: var(--yt-spec-text-primary);
-        padding: 20px 24px;
-        border-top-left-radius: 16px;
-        border-top-right-radius: 16px;
-        max-width: 500px;
-        width: 100%;
-        position: relative;
-        box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
-        border-top: 1px solid var(--yt-spec-border-color);
-        animation: slideUp 0.25s ease-out;
-    }
-
-    @keyframes slideUp {
-        from { transform: translateY(100%); }
-        to { transform: translateY(0); }
-    }
-
-    .yt-tool-item {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 14px 16px;
-        border-radius: 8px;
-        color: var(--yt-spec-text-primary);
-        text-decoration: none;
-        cursor: pointer;
-        font-size: 0.95rem;
-        transition: background-color 0.2s;
-    }
-
-    .yt-tool-item:hover {
-        background-color: var(--yt-spec-button-chip-hover);
-    }
-
-    /* YouTube Toast Notification Style */
     #custom-alert {
         position: fixed;
         bottom: 24px;
         left: 24px;
         background: var(--yt-spec-static-overlay-background-solid);
         color: var(--yt-spec-text-primary);
-        padding: 12px 24px;
+        padding: 12px 20px;
         border-radius: 8px;
         box-shadow: 0 4px 16px rgba(0,0,0,0.4);
         z-index: 4000;
@@ -568,7 +495,6 @@
         border: 1px solid var(--yt-spec-border-color);
     }
 
-    /* Floating Quick Control Bar */
     #floating-control {
         position: fixed;
         bottom: 24px;
@@ -596,9 +522,7 @@
         transition: transform 0.2s;
     }
 
-    .yt-control-trigger:hover {
-        transform: scale(1.05);
-    }
+    .yt-control-trigger:hover { transform: scale(1.05); }
 
     .yt-control-menu {
         background: var(--yt-spec-static-overlay-background-solid);
@@ -620,40 +544,16 @@
         border-radius: 8px;
         cursor: pointer;
         font-size: 0.85rem;
-        color: var(--yt-spec-text-primary);
     }
 
-    .yt-control-item:hover {
+    .yt-control-item:hover, .yt-control-item.active {
         background: var(--yt-spec-button-chip-hover);
     }
 
-    .yt-control-item.active {
-        background: var(--yt-spec-button-chip-hover);
-    }
-
-    .yt-source-options {
-        display: none;
-        flex-direction: column;
-        gap: 2px;
-        padding-left: 8px;
-    }
-
-    .yt-source-options.show {
-        display: flex;
-    }
-
-    .yt-sub-item {
-        font-size: 0.8rem;
-        padding: 6px 10px;
-        border-radius: 6px;
-        color: var(--yt-spec-text-primary);
-        cursor: pointer;
-    }
-
-    .yt-sub-item.selected {
-        background: var(--yt-brand-red);
-        color: white;
-    }
+    .yt-source-options { display: none; flex-direction: column; gap: 2px; padding-left: 8px; }
+    .yt-source-options.show { display: flex; }
+    .yt-sub-item { font-size: 0.8rem; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
+    .yt-sub-item.selected { background: var(--yt-brand-red); color: white; }
 </style>
 {% endblock %}
 
@@ -673,7 +573,7 @@
             </h3>
             <div id="dl-list">
                 {% for stream in streamUrls %}
-                <div class="yt-dl-item">
+                <div class="yt-dl-item" style="display:flex; justify-content:space-between; align-items:center; padding: 10px 0; border-bottom: 1px solid var(--yt-spec-border-color);">
                     <div>
                         <strong style="font-size:0.9rem;">{{ stream.resolution }}</strong> 
                         <span style="color:var(--yt-spec-text-secondary); font-size:0.8rem; margin-left:4px;">({{ stream.format }})</span>
@@ -681,25 +581,6 @@
                     <a href="{{ stream.url }}" download class="yt-pill-button" style="height:32px; padding:0 12px; font-size:0.8rem;">ダウンロード</a>
                 </div>
                 {% endfor %}
-            </div>
-        </div>
-    </div>
-
-    <div id="tool-modal" class="yt-bottom-modal-overlay" onclick="closeToolModalOnOverlay(event)">
-        <div class="yt-bottom-modal-content">
-            <i class="fas fa-times yt-modal-close" onclick="closeToolModal()"></i>
-            <h3 style="margin-top:0; font-size:1.1rem; margin-bottom:16px;">
-                <i class="fas fa-tools" style="margin-right:8px; color:var(--yt-brand-red);"></i>ツール
-            </h3>
-            <div style="display: flex; flex-direction: column; gap: 4px;">
-                <div class="yt-tool-item" onclick="copyId(); closeToolModal();">
-                    <i class="fas fa-fingerprint" style="width: 20px;"></i>
-                    <span>IDコピー</span>
-                </div>
-                <a href="https://www.youtube.com/watch?v={{ videoid }}" target="_blank" class="yt-tool-item" onclick="closeToolModal()">
-                    <i class="fab fa-youtube" style="width: 20px;"></i>
-                    <span>本家で開く</span>
-                </a>
             </div>
         </div>
     </div>
@@ -742,16 +623,23 @@
                 <div id="iframe-container" style="display:none; width:100%; height:100%;"></div>
             </div>
 
-            <h1 class="yt-video-title">{{ video_title }}</h1>
+            <h1 class="yt-video-title" id="video-title">
+                {% if video_title %}{{ video_title }}{% else %}<div class="skeleton-box skeleton-text" style="width: 75%; height: 24px;"></div>{% endif %}
+            </h1>
 
             <div class="yt-owner-actions-row">
-                <div class="yt-owner-info">
-                    <a href="/channel/{{ author_id }}" class="yt-channel-avatar-link">
-                        <img src="{{ author_icon }}" alt="{{ author }}">
+                <div class="yt-owner-info" id="owner-info">
+                    <a href="/channel/{{ author_id }}" class="yt-channel-avatar-link" id="channel-avatar">
+                        <img src="{{ author_icon }}" alt="{{ author }}" onerror="this.style.display='none'">
                     </a>
-                    <div class="yt-channel-text">
-                        <a href="/channel/{{ author_id }}" class="yt-channel-name">{{ author }}</a>
-                        <span class="yt-channel-subscribers">チャンネル登録者数 {{ subscribers_count }}</span>
+                    <div class="yt-channel-text" id="channel-text">
+                        {% if author %}
+                            <a href="/channel/{{ author_id }}" class="yt-channel-name">{{ author }}</a>
+                            <span class="yt-channel-subscribers">チャンネル登録者数 {{ subscribers_count }}</span>
+                        {% else %}
+                            <div class="skeleton-box skeleton-text" style="width: 120px; height: 16px;"></div>
+                            <div class="skeleton-box skeleton-text" style="width: 80px; height: 12px; margin-top: 4px;"></div>
+                        {% endif %}
                     </div>
                     <button class="yt-subscribe-btn">チャンネル登録</button>
                 </div>
@@ -760,7 +648,7 @@
                     <div class="yt-like-dislike-group">
                         <button class="yt-like-btn">
                             <i class="far fa-thumbs-up"></i>
-                            <span>{{ like_count }}</span>
+                            <span>{{ like_count if like_count else '高評価' }}</span>
                         </button>
                         <div class="yt-like-dislike-divider"></div>
                         <button class="yt-dislike-btn" aria-label="低評価">
@@ -770,12 +658,7 @@
 
                     <button class="yt-pill-button" onclick="openModal()">
                         <i class="fas fa-download"></i>
-                        <span>ダウンロード</span>
-                    </button>
-
-                    <button class="yt-pill-button" onclick="openToolModal()">
-                        <i class="fas fa-ellipsis-h"></i>
-                        <span>ツール</span>
+                        <span>保存</span>
                     </button>
 
                     <div class="yt-custom-select" id="qualitySelect">
@@ -787,9 +670,7 @@
                         <div class="yt-select-dropdown">
                             <div class="yt-dropdown-item selected" data-value="{{ videourls[0] if videourls else '' }}" data-audio="">自動 (デフォルト)</div>
                             {% for stream in streamUrls %}
-                            <div class="yt-dropdown-item" 
-                                 data-value="{{ stream.url }}" 
-                                 data-audio="{{ stream.audioUrl or '' }}">
+                            <div class="yt-dropdown-item" data-value="{{ stream.url }}" data-audio="{{ stream.audioUrl or '' }}">
                                 {{ stream.resolution }} ({{ stream.format }})
                             </div>
                             {% endfor %}
@@ -801,62 +682,155 @@
 
             <div class="yt-description-container">
                 <div class="yt-description-header">
-                    <span>{{ view_count }} 回視聴</span>
+                    <span>{{ view_count if view_count else '---' }} 回視聴</span>
                 </div>
-                <div class="yt-description-body">{{ description | safe }}</div>
+                <div class="yt-description-body" id="description-body">
+                    {% if description %}
+                        {{ description | safe }}
+                    {% else %}
+                        <div class="skeleton-box skeleton-text" style="width: 90%;"></div>
+                        <div class="skeleton-box skeleton-text" style="width: 60%;"></div>
+                    {% endif %}
+                </div>
             </div>
 
             <div class="yt-comments-container">
-                <div class="yt-comments-header">
-                    <span>コメント</span>
-                </div>
+                <div class="yt-comments-header"><span>コメント</span></div>
                 <div id="comment-list">
-                    {% for c in comments %}
-                    <div class="yt-comment-item">
-                        <img src="{{ c.authorThumbnail if c.authorThumbnail else (c.authorThumbnails|last).url if c.authorThumbnails else (c.authorIcons|last).url if c.authorIcons else '' }}" class="yt-comment-avatar" alt="u">
-                        <div class="yt-comment-content">
-                            <div class="yt-comment-author-line">
-                                {{ c.author }}
-                                <span class="yt-comment-time">{{ c.publishedText }}</span>
+                    {% if comments %}
+                        {% for c in comments %}
+                        <div class="yt-comment-item" style="display:flex; gap:16px; margin-bottom:20px;">
+                            <img src="{{ c.authorThumbnail if c.authorThumbnail else (c.authorThumbnails|last).url if c.authorThumbnails else '' }}" class="yt-comment-avatar" style="width:40px; height:40px; border-radius:50%; flex-shrink:0;">
+                            <div>
+                                <div style="font-size:0.8rem; font-weight:600;">{{ c.author }} <span style="color:var(--yt-spec-text-secondary); font-weight:400;">{{ c.publishedText }}</span></div>
+                                <div style="font-size:0.875rem; margin-top:4px;">{{ c.contentHtml | safe }}</div>
                             </div>
-                            <div class="yt-comment-text">{{ c.contentHtml | safe }}</div>
                         </div>
-                    </div>
-                    {% endfor %}
+                        {% endfor %}
+                    {% else %}
+                        <div class="yt-comment-item" style="display:flex; gap:16px; margin-bottom:16px;">
+                            <div class="skeleton-box" style="width:40px; height:40px; border-radius:50%;"></div>
+                            <div style="flex:1;">
+                                <div class="skeleton-box skeleton-text" style="width: 120px;"></div>
+                                <div class="skeleton-box skeleton-text" style="width: 80%;"></div>
+                            </div>
+                        </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
 
-        <div class="yt-secondary-column">
-            {% for v in recommended_videos %}
-            <a href="/watch?v={{ v.video_id }}" class="yt-recommend-card">
-                <div class="yt-recommend-thumb-wrapper">
-                    <img src="/thumbnail?v={{ v.video_id }}" class="yt-recommend-thumb" loading="lazy" alt="{{ v.title }}">
-                </div>
-                <div class="yt-recommend-details">
-                    <div class="yt-recommend-title">{{ v.title }}</div>
-                    <div class="yt-recommend-meta">
-                        <div>{{ v.author }}</div>
-                        <div>{{ v.view_count_text }}</div>
+        <div class="yt-secondary-column" id="recommend-column">
+            {% if recommended_videos %}
+                {% for v in recommended_videos %}
+                <a href="/watch?v={{ v.video_id }}" class="yt-recommend-card">
+                    <div class="yt-recommend-thumb-wrapper">
+                        <img src="/thumbnail?v={{ v.video_id }}" class="yt-recommend-thumb" loading="lazy" alt="{{ v.title }}">
+                    </div>
+                    <div class="yt-recommend-details">
+                        <div class="yt-recommend-title">{{ v.title }}</div>
+                        <div class="yt-recommend-meta">
+                            <div>{{ v.author }}</div>
+                            <div>{{ v.view_count_text }}</div>
+                        </div>
+                    </div>
+                </a>
+                {% endfor %}
+            {% else %}
+                {% for i in range(8) %}
+                <div class="yt-recommend-skeleton-card">
+                    <div class="skeleton-box yt-recommend-skeleton-thumb"></div>
+                    <div class="yt-recommend-skeleton-info">
+                        <div class="skeleton-box skeleton-text" style="width: 90%; height: 14px;"></div>
+                        <div class="skeleton-box skeleton-text" style="width: 70%; height: 14px;"></div>
+                        <div class="skeleton-box skeleton-text" style="width: 50%; height: 12px; margin-top:4px;"></div>
                     </div>
                 </div>
-            </a>
-            {% endfor %}
+                {% endfor %}
+            {% endif %}
         </div>
     </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
+    const videoId = "{{ videoid }}";
     const video = document.getElementById('video-player');
     const audio = document.getElementById('audio-sync');
     const loader = document.getElementById('loader');
-    const selectWrapper = document.getElementById('qualitySelect');
-    const selectTrigger = document.getElementById('qualityTrigger');
-    const options = selectWrapper.querySelectorAll('.yt-dropdown-item');
-    const iframeContainer = document.getElementById('iframe-container');
-    let hls = null;
 
+    // 多重バックエンド（Invidious, Piped, Sia等）フォールバック定義
+    const API_INSTANCES = [
+        `https://inv.riverside.rocks/api/v1/videos/${videoId}`,
+        `https://invidious.nerdvpn.de/api/v1/videos/${videoId}`,
+        `https://pipedapi.kavin.rocks/streams/${videoId}`
+    ];
+
+    // データの取得漏れチェック＆フォールバック試行処理
+    async function fetchFallbackData() {
+        const hasTitle = "{{ video_title }}" !== "";
+        const hasRecs = {{ 'true' if recommended_videos else 'false' }};
+
+        if (hasTitle && hasRecs) return; // 既存のサーバーサイドレンダリングで取得できている場合はパス
+
+        showNotify("詳細情報をバックエンドから再取得中...");
+
+        for (let url of API_INSTANCES) {
+            try {
+                const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+                if (!res.ok) continue;
+                const data = await res.json();
+
+                // 取得データの反映処理
+                if (!hasTitle && data.title) {
+                    document.getElementById('video-title').innerText = data.title;
+                    document.title = data.title + " - YouTube";
+                }
+
+                if (!hasRecs && (data.recommendedVideos || data.relatedStreams)) {
+                    const recs = data.recommendedVideos || data.relatedStreams;
+                    renderRecommendations(recs);
+                }
+
+                showNotify("情報を読み込みました");
+                break; // 成功したためループを抜ける
+            } catch (e) {
+                console.warn("Instance failed, trying next...", url);
+            }
+        }
+    }
+
+    // 動的に関連動画を描画する関数
+    function renderRecommendations(list) {
+        const container = document.getElementById('recommend-column');
+        container.innerHTML = ''; // スケルトン枠を消去
+
+        list.slice(0, 15).forEach(v => {
+            const id = v.videoId || v.url?.replace('/watch?v=', '');
+            const title = v.title;
+            const author = v.author || v.uploaderName || '';
+            const views = v.viewCountText || (v.views ? `${v.views.toLocaleString()} 回視聴` : '');
+
+            const card = document.createElement('a');
+            card.className = 'yt-recommend-card';
+            card.href = `/watch?v=${id}`;
+            card.innerHTML = `
+                <div class="yt-recommend-thumb-wrapper">
+                    <img src="https://i.ytimg.com/vi/${id}/mqdefault.jpg" class="yt-recommend-thumb" loading="lazy">
+                </div>
+                <div class="yt-recommend-details">
+                    <div class="yt-recommend-title">${title}</div>
+                    <div class="yt-recommend-meta">
+                        <div>${author}</div>
+                        <div>${views}</div>
+                    </div>
+                </div>
+            `;
+            container.appendChild(card);
+        });
+    }
+
+    // UI制御関数群
     function toggleControlMenu() {
         const menu = document.getElementById('ctrlMenu');
         menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
@@ -875,250 +849,24 @@
         showNotify(video.muted ? "音声をミュートしました" : "ミュートを解除しました");
     }
 
-    function openQualityFromCtrl() {
-        toggleControlMenu();
-        selectWrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        setTimeout(() => selectWrapper.classList.add('open'), 500);
-    }
-
-    function toggleSourceOptions() {
-        document.getElementById('srcOpts').classList.toggle('show');
-    }
-
-    let currentSourceType = 'stream';
-    function setExternalSource(type) {
-        if (currentSourceType === type) return;
-        
-        document.querySelectorAll('.yt-sub-item').forEach(i => i.classList.remove('selected'));
-        document.getElementById('src-' + type).classList.add('selected');
-        document.getElementById('sourceToggle').classList.toggle('active', type !== 'stream');
-        
-        currentSourceType = type;
-        
-        if (type === 'stream') {
-            iframeContainer.style.display = 'none';
-            iframeContainer.innerHTML = '';
-            video.style.display = 'block';
-            video.play().catch(() => {});
-            showNotify("Streamソースに戻しました");
-        } else {
-            let domain = type === 'nocookie' ? 'www.youtube-nocookie.com' : 'www.youtube-education.com';
-            const ytUrl = `https://${domain}/embed/{{ videoid }}`;
-            video.pause();
-            video.style.display = 'none';
-            iframeContainer.innerHTML = `<iframe src="${ytUrl}?autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
-            iframeContainer.style.display = 'block';
-            showNotify(`${type === 'nocookie' ? 'NoCookie' : 'Education'}に切り替えました`);
-        }
-    }
-
-    selectTrigger.addEventListener('click', (e) => {
-        e.stopPropagation();
-        selectWrapper.classList.toggle('open');
-    });
-
-    options.forEach(option => {
-        option.addEventListener('click', function() {
-            const type = this.getAttribute('data-type');
-            const url = this.getAttribute('data-value');
-            const audioUrl = this.getAttribute('data-audio');
-
-            if (type === 'm3u8') {
-                if (confirm("取得に時間がかかりますがよろしいですか？")) {
-                    selectWrapper.classList.remove('open');
-                    fetchM3U8(url);
-                }
-                return;
-            }
-
-            if (video.src === url) {
-                selectWrapper.classList.remove('open');
-                return;
-            }
-            options.forEach(opt => opt.classList.remove('selected'));
-            this.classList.add('selected');
-            document.getElementById('qualityLabel').innerText = "画質: " + this.innerText.trim();
-            selectWrapper.classList.remove('open');
-            changeQualityLogic(url, audioUrl);
-        });
-    });
-
-    async function fetchM3U8(ytUrl) {
-        loader.style.display = 'flex';
-        showNotify("M3U8を取得中... (最大30秒)");
-        
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000);
-
-        try {
-            const apiUrl = `https://siasama-m3u8.onrender.com/extract?url=${encodeURIComponent(ytUrl)}`;
-            const resp = await fetch(apiUrl, { signal: controller.signal });
-            const data = await resp.json();
-            clearTimeout(timeoutId);
-
-            if (data && data.url) {
-                playM3U8(data.url);
-                showNotify("HLS再生を開始します");
-            } else {
-                throw new Error("Invalid URL");
-            }
-        } catch (err) {
-            loader.style.display = 'none';
-            showNotify("取得に失敗しました。タイムアウトかサーバーエラーです。", true);
-        }
-    }
-
-    function playM3U8(m3u8Url) {
-        if (hls) {
-            hls.destroy();
-        }
-        audio.src = "";
-        if (Hls.isSupported()) {
-            hls = new Hls();
-            hls.loadSource(m3u8Url);
-            hls.attachMedia(video);
-            hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                video.play();
-            });
-        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = m3u8Url;
-            video.addEventListener('loadedmetadata', function() {
-                video.play();
-            });
-        }
-    }
-
-    window.addEventListener('click', (e) => {
-        if (!selectWrapper.contains(e.target) && !document.getElementById('floating-control').contains(e.target)) {
-            selectWrapper.classList.remove('open');
-            document.getElementById('ctrlMenu').style.display = 'none';
-            document.getElementById('srcOpts').classList.remove('show');
-        }
-    });
-
-    function changeQualityLogic(url, audioUrl) {
-        if (hls) { hls.destroy(); hls = null; }
-        const currentTime = video.currentTime;
-        const isPaused = video.paused;
-        loader.style.display = 'flex';
-        video.src = url;
-        if(audioUrl) {
-            audio.src = audioUrl;
-            audio.load();
-        } else {
-            audio.src = "";
-        }
-        video.onloadedmetadata = () => {
-            video.currentTime = currentTime;
-            if (!isPaused) video.play().catch(() => {});
-            video.onloadedmetadata = null;
-        };
-        showNotify("画質を切り替えました");
-    }
-
-    function reloadVideoSource() {
-        if (currentSourceType !== 'stream') return;
-        const currentTime = video.currentTime;
-        const wasPlaying = !video.paused;
-        video.load();
-        video.onloadedmetadata = () => {
-            video.currentTime = currentTime;
-            if (wasPlaying) video.play().catch(() => {});
-            video.onloadedmetadata = null;
-        };
-        showNotify("動画ソースを再接続しました");
-    }
-
-    let loadStuckTimer = null;
-    video.addEventListener('play', () => {
-        loadStuckTimer = setTimeout(() => {
-            if (video.currentTime === 0 && video.readyState < 3) {
-                reloadVideoSource();
-            }
-        }, 5000);
-    });
-    video.addEventListener('waiting', () => { 
-        loader.style.display = 'flex';
-        if (!loadStuckTimer) {
-            loadStuckTimer = setTimeout(() => {
-                if (video.paused === false) reloadVideoSource();
-            }, 8000);
-        }
-    });
-    video.addEventListener('playing', () => { 
-        loader.style.display = 'none'; 
-        clearTimeout(loadStuckTimer);
-        loadStuckTimer = null;
-    });
-
-    let errorHistory = [];
-    video.addEventListener('error', () => {
-        if (currentSourceType !== 'stream') return;
-        loader.style.display = 'none';
-        
-        const now = Date.now();
-        errorHistory.push(now);
-        errorHistory = errorHistory.filter(time => now - time <= 10000);
-
-        if (errorHistory.length >= 2) {
-            showNotify("頻繁なエラーのため、自動リロードします...", true);
-            setTimeout(() => location.reload(), 1500);
-        } else {
-            showNotify("読み込みエラー。再試行中...", true);
-            setTimeout(reloadVideoSource, 1000);
-        }
-    });
-
-    let isSyncing = false;
-    video.addEventListener('timeupdate', () => {
-        if (audio.src && !video.paused && !isSyncing) {
-            const diff = video.currentTime - audio.currentTime;
-            if (Math.abs(diff) > 0.3) {
-                isSyncing = true;
-                audio.currentTime = video.currentTime;
-                setTimeout(() => { isSyncing = false; }, 50);
-            }
-        }
-    });
-    video.addEventListener('play', () => { if (audio.src) audio.play().catch(() => {}); });
-    video.addEventListener('pause', () => { if (audio.src) audio.pause(); });
-    video.addEventListener('seeking', () => { if (audio.src) audio.currentTime = video.currentTime; });
-    video.addEventListener('ratechange', () => { if (audio.src) audio.playbackRate = video.playbackRate; });
-
     function showNotify(msg, isError = false) {
         const alertBox = document.getElementById("custom-alert");
         const alertIcon = document.getElementById("alert-icon");
         const alertText = document.getElementById("alert-text");
         alertText.innerText = msg;
-        if (isError) {
-            alertIcon.className = "fas fa-exclamation-triangle";
-            alertIcon.style.color = "#ff4d4f";
-        } else {
-            alertIcon.className = "fas fa-info-circle";
-            alertIcon.style.color = "var(--yt-spec-text-primary)";
-        }
-        $(alertBox).stop(true, true).fadeIn(200).delay(2500).fadeOut(400);
+        alertIcon.className = isError ? "fas fa-exclamation-triangle" : "fas fa-info-circle";
+        alertIcon.style.color = isError ? "#ff4d4f" : "var(--yt-spec-text-primary)";
+        
+        alertBox.style.display = "block";
+        setTimeout(() => { alertBox.style.display = "none"; }, 3000);
     }
 
     function openModal() { document.getElementById('dl-modal').style.display = 'flex'; }
     function closeModal() { document.getElementById('dl-modal').style.display = 'none'; }
-    
-    function openToolModal() { document.getElementById('tool-modal').style.display = 'flex'; }
-    function closeToolModal() { document.getElementById('tool-modal').style.display = 'none'; }
-    function closeToolModalOnOverlay(event) {
-        if (event.target === document.getElementById('tool-modal')) {
-            closeToolModal();
-        }
-    }
 
-    window.onclick = function(event) {
-        const modal = document.getElementById('dl-modal');
-        if (event.target == modal) closeModal();
-    }
-    
-    function copyId() {
-        const id = "{{ videoid }}";
-        navigator.clipboard.writeText(id).then(() => { showNotify("動画IDをコピーしました"); });
-    }
+    // ページロード時初期化
+    window.addEventListener('DOMContentLoaded', () => {
+        fetchFallbackData();
+    });
 </script>
 {% endblock %}
