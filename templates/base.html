@@ -310,6 +310,7 @@
             font-size: 15px;
             font-weight: 400;
             color: var(--yt-text-primary) !important;
+            background-color: transparent !important;
             border: none !important;
             border-radius: 8px;
             cursor: pointer;
@@ -317,6 +318,7 @@
         }
         .ui-menu-item-wrapper.ui-state-active {
             background-color: var(--yt-hover-bg) !important;
+            color: var(--yt-text-primary) !important;
             margin: 0 !important;
             font-weight: 500;
         }
@@ -328,6 +330,7 @@
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            color: var(--yt-text-primary);
         }
         .suggest-item-content .suggest-icon {
             font-size: 20px;
@@ -337,6 +340,7 @@
         .suggest-item-content .suggest-text {
             overflow: hidden;
             text-overflow: ellipsis;
+            color: var(--yt-text-primary);
         }
     </style>
     {% block extra_css %}{% endblock %}
