@@ -34,7 +34,7 @@ PIPED_INSTANCES = [
     "https://pipedapi.winscloud.net"
 ]
 
-SENNIN_API_BASE = "discerning-adventure-production-ebfc.up.railway.app"
+SENNIN_API_BASE = "https://discerning-adventure-production-ebfc.up.railway.app"
 
 RAPID_API_HOST = "ytstream-download-youtube-videos.p.rapidapi.com"
 
@@ -235,7 +235,7 @@ async def fetch_invidious(endpoint: str, params: dict = None, force_instance: st
     return await fetch_with_inflight(cache_key, _do_fetch, ttl=180.0)
 
 
-# ===== Sennin API (Node.js Comments API) =====
+# ===== Sennin API (Node.js Comments / Video API) =====
 async def fetch_sennin_comments(v: str, sort: str = "top"):
     """Sennin APIからコメント取得"""
     try:
@@ -250,12 +250,72 @@ async def fetch_sennin_comments(v: str, sort: str = "top"):
 
 
 async def fetch_sennin_video_info(v: str):
-    """Sennin APIからビデオ情報取得（コメント付き）"""
+    """Sennin APIからビデオ情報取得"""
     try:
         url = f"{SENNIN_API_BASE}/api/video/{v}"
         resp = await client_session.get(url, timeout=4.0)
         if resp.status_code == 200:
-            return resp.json()
+            data = resp.json()
+
+            # チャンネル情報の抽出
+            author_info = data.get("author") or data.get("uploader") or {}
+            if isinstance(author_info, dict):
+                author_name = author_info.get("name") or author_info.get("author") or ""
+                author_id = author_info.get("channelId") or author_info.get("id") or ""
+                author_icon = author_info.get("avatar") or author_info.get("thumbnail") or ""
+                sub_count = author_info.get("subscribers") or author_info.get("subscriberCount") or "非公開"
+            else:
+                author_name = str(author_info or "")
+                author_id = ""
+                author_icon = ""
+                sub_count = "非公開"
+
+            # 概要欄テキストの抽出
+            desc_val = data.get("description") or ""
+            if isinstance(desc_val, dict):
+                desc_text = desc_val.get("text", "")
+            else:
+                desc_text = str(desc_val or "")
+            desc_html = desc_text.replace("\n", "<br>")
+
+            # 関連動画の抽出
+            raw_recs = data.get("recommendedVideos") or data.get("relatedVideos") or data.get("relatedStreams") or []
+            recommended = []
+            if isinstance(raw_recs, list):
+                for item in raw_recs:
+                    if not isinstance(item, dict):
+                        continue
+                    v_id = item.get("videoId") or item.get("id")
+                    if not v_id:
+                        continue
+                    
+                    thumbs = item.get("thumbnails", [])
+                    thumb_url = ""
+                    if isinstance(thumbs, list) and thumbs:
+                        thumb_url = thumbs[0].get("url", "") if isinstance(thumbs[0], dict) else str(thumbs[0])
+                    elif isinstance(item.get("thumbnail"), str):
+                        thumb_url = item.get("thumbnail")
+
+                    recommended.append({
+                        "video_id": v_id,
+                        "title": item.get("title", ""),
+                        "author": item.get("author") or item.get("uploaderName") or item.get("channelName") or "",
+                        "view_count_text": item.get("viewCountText") or (f"{item.get('viewCount')} 回視聴" if item.get("viewCount") else ""),
+                        "thumbnail": thumb_url
+                    })
+
+            return {
+                "title": data.get("title", ""),
+                "author": author_name,
+                "authorId": author_id,
+                "authorIcon": author_icon,
+                "subCountText": sub_count,
+                "viewCount": data.get("viewCount") or data.get("views") or 0,
+                "likeCount": data.get("likeCount") or data.get("likes") or 0,
+                "descriptionHtml": desc_html,
+                "recommendedVideos": recommended,
+                "comments": data.get("comments", [])
+            }
     except Exception:
         pass
     raise Exception("Sennin video info failed")
@@ -277,20 +337,51 @@ def normalize_sennin_comments(sennin_data: dict) -> list:
         if not isinstance(c, dict):
             continue
         
-        # Sennin形式を標準フォーマットに変換
+        author_val = c.get("author")
+        if isinstance(author_val, dict):
+            author_name = author_val.get("name") or author_val.get("author") or ""
+            author_id = author_val.get("channelId") or author_val.get("id") or ""
+            author_icon = author_val.get("avatar") or author_val.get("thumbnail") or author_val.get("authorIcon") or ""
+            is_creator = author_val.get("creator", False)
+            is_verified = author_val.get("verified", False)
+        else:
+            author_name = str(author_val or "")
+            author_id = c.get("authorId", "")
+            author_icon = c.get("authorIcon") or c.get("avatar", "")
+            is_creator = c.get("isCreator", False)
+            is_verified = c.get("isVerified", False)
+
+        content_text = c.get("text") or c.get("content") or c.get("contentText") or ""
+        
+        likes_val = c.get("likes")
+        if isinstance(likes_val, dict):
+            like_count = likes_val.get("count", 0)
+        else:
+            like_count = likes_val if isinstance(likes_val, int) else c.get("likeCount", 0)
+
+        replies_val = c.get("replies")
+        if isinstance(replies_val, dict):
+            reply_count = replies_val.get("count", 0)
+        else:
+            reply_count = replies_val if isinstance(replies_val, int) else c.get("replyCount", 0)
+
+        pub_time = c.get("publishedText") or c.get("publishedTime") or ""
+
         processed.append({
-            "commentId": c.get("commentId"),
-            "author": c.get("author", {}).get("name") or c.get("author"),
-            "authorId": c.get("author", {}).get("channelId") if isinstance(c.get("author"), dict) else c.get("authorId", ""),
-            "authorIcon": c.get("author", {}).get("avatar") if isinstance(c.get("author"), dict) else c.get("authorIcon", ""),
-            "content": c.get("text") or c.get("content", ""),
-            "contentHtml": (c.get("text") or c.get("content", "")).replace("\n", "<br>"),
-            "publishedTime": c.get("publishedTime"),
-            "publishedText": c.get("publishedTime"),  # Sennin形式では publishedTime が存在
-            "likeCount": c.get("likes", {}).get("count") if isinstance(c.get("likes"), dict) else c.get("likes", 0),
-            "replyCount": c.get("replies", {}).get("count") if isinstance(c.get("replies"), dict) else c.get("replies", 0),
-            "isCreator": c.get("author", {}).get("creator") if isinstance(c.get("author"), dict) else False,
-            "isVerified": c.get("author", {}).get("verified") if isinstance(c.get("author"), dict) else False,
+            "commentId": c.get("commentId") or c.get("id", ""),
+            "author": author_name,
+            "authorId": author_id,
+            "authorIcon": author_icon,
+            "avatar": author_icon,
+            "authorThumbnail": author_icon,
+            "content": content_text,
+            "contentHtml": content_text.replace("\n", "<br>"),
+            "publishedTime": pub_time,
+            "publishedText": pub_time,
+            "likeCount": like_count,
+            "replyCount": reply_count,
+            "isCreator": is_creator,
+            "isVerified": is_verified,
         })
     
     return processed
@@ -738,7 +829,7 @@ def process_comments(comment_data):
     if isinstance(comment_data, Exception) or not comment_data:
         return []
     
-    # Sennin形式の場合
+    # Sennin形式の場合（dictのキー構造チェック）
     if isinstance(comment_data, dict) and "comments" in comment_data and isinstance(comment_data.get("comments"), list):
         return normalize_sennin_comments(comment_data)
     
@@ -947,6 +1038,10 @@ async def shorts_player(request: Request, v: str, force_instance: str = Query(No
         v_likes = v_data.get("likeCount", 0)
         v_desc = v_data.get("descriptionHtml") or v_data.get("description", "").replace("\n", "<br>")
 
+        # Sennin APIレスポンスでvideo_info内にcommentsが含まれている場合に対応
+        if (not comment_data or isinstance(comment_data, Exception)) and v_data.get("comments"):
+            comment_data = {"comments": v_data.get("comments")}
+
         formatted_comments = process_comments(comment_data)
 
         return templates.TemplateResponse("short.html", {
@@ -1012,8 +1107,12 @@ async def watch(request: Request, v: str = Query(...), force_instance: str = Que
         youtube_url = f"https://www.youtube.com/watch?v={v}"
         v_title = v_data.get("title") or s_data.get("title") or ""
         v_author = v_data.get("author") or s_data.get("author") or ""
-        v_sub_count = v_data.get("subCountText") or v_data.get("subCountText", "非公開")
+        v_sub_count = v_data.get("subCountText") or "非公開"
         v_desc = v_data.get("descriptionHtml") or s_data.get("descriptionHtml") or v_data.get("description", "").replace("\n", "<br>")
+
+        # Sennin APIレスポンスでvideo_info内にcommentsが含まれている場合に対応
+        if (not comment_data or isinstance(comment_data, Exception)) and v_data.get("comments"):
+            comment_data = {"comments": v_data.get("comments")}
 
         formatted_comments = process_comments(comment_data)
 
