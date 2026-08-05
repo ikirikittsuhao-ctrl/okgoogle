@@ -444,17 +444,21 @@ async def fetch_video_info(v: str, force_instance: str = None, api: str = None):
             except Exception:
                 return await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
 
-        if not force_instance:
-            # デフォルト: Sennin -> Sia -> Invidiousの順で試行
-            try:
-                return await fetch_sennin_video_info(v)
-            except Exception:
-                pass
-            try:
-                return await fetch_sia_video(v)
-            except Exception:
-                pass
-        return await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
+        # デフォルトの試行順序: Invidious (最優先) -> Sia -> Sennin
+        try:
+            return await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
+        except Exception:
+            pass
+        try:
+            return await fetch_sia_video(v)
+        except Exception:
+            pass
+        try:
+            return await fetch_sennin_video_info(v)
+        except Exception:
+            pass
+        
+        raise Exception("All video info endpoints failed")
 
     return await fetch_with_inflight(cache_key, _do_fetch, ttl=180.0)
 
@@ -650,13 +654,23 @@ async def fetch_fastest_stream_urls(v: str, api: str = None, force_instance: str
             v_data = await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
             return extract_invidious_streams(v_data)
         elif api == "sennin":
-            # Sennin形式では動画URL情報がないため、Sia→Invidiousで取得
+            # Senninが選択された場合はSia -> Invidiousの順でフォールバックしてストリームを取得
             try:
                 return await fetch_sia_stream(v)
             except Exception:
                 v_data = await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
                 return extract_invidious_streams(v_data)
 
+        # デフォルト挙動: まず Invidious からの取得を最優先
+        try:
+            v_data = await fetch_invidious(f"/videos/{v}", force_instance=force_instance, list_type="video")
+            inv_streams = extract_invidious_streams(v_data)
+            if inv_streams and inv_streams.get("videoUrls"):
+                return inv_streams
+        except Exception:
+            pass
+
+        # Invidiousが失敗した時のみその他の外部サービス並列試行
         tasks = [
             asyncio.create_task(fetch_sia_stream(v)),
             asyncio.create_task(fetch_piped_stream(v)),
@@ -708,46 +722,21 @@ async def fetch_comments(v: str, force_instance: str = None, api: str = None):
             except Exception:
                 return await fetch_invidious(f"/comments/{v}", force_instance=force_instance, list_type="video")
 
-        # デフォルト: Sennin -> Sia -> Invidiousの順
-        sennin_task = asyncio.create_task(fetch_sennin_comments(v))
-        
-        done, pending = await asyncio.wait([sennin_task], timeout=2.5)
-        
-        if sennin_task in done:
-            try:
-                res = sennin_task.result()
-                if res is not None:
-                    return res
-            except Exception:
-                pass
+        # デフォルト: Invidious -> Sia -> Senninの順で試行
+        try:
+            return await fetch_invidious(f"/comments/{v}", force_instance=force_instance, list_type="video")
+        except Exception:
+            pass
 
-        sia_task = asyncio.create_task(fetch_sia_comments(v))
-        done_sia, pending_sia = await asyncio.wait([sia_task], timeout=2.5)
-        
-        if sia_task in done_sia:
-            try:
-                res = sia_task.result()
-                if res is not None:
-                    return res
-            except Exception:
-                pass
+        try:
+            return await fetch_sia_comments(v)
+        except Exception:
+            pass
 
-        invidious_task = asyncio.create_task(fetch_invidious(f"/comments/{v}", force_instance=force_instance, list_type="video"))
-        
-        remaining_tasks = [t for t in [sennin_task, sia_task, invidious_task] if not t.done()]
-        
-        while remaining_tasks:
-            done_batch, pending_batch = await asyncio.wait(remaining_tasks, return_when=asyncio.FIRST_COMPLETED)
-            for t in done_batch:
-                try:
-                    res = t.result()
-                    if res is not None:
-                        for p in pending_batch:
-                            p.cancel()
-                        return res
-                except Exception:
-                    continue
-            remaining_tasks = list(pending_batch)
+        try:
+            return await fetch_sennin_comments(v)
+        except Exception:
+            pass
 
         return None
 
