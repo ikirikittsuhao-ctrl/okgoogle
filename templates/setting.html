@@ -1,0 +1,319 @@
+{% extends "base.html" %}
+
+{% block title %}設定 - 仙人Tube{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* --- Settings Page Layout --- */
+    .settings-container {
+        max-width: 1280px;
+        margin: 0 auto;
+        display: flex;
+        gap: 24px;
+        padding-top: 16px;
+    }
+
+    .settings-nav {
+        width: 240px;
+        flex-shrink: 0;
+    }
+
+    .settings-nav-title {
+        font-size: 20px;
+        font-weight: 700;
+        margin: 0 0 16px 12px;
+        color: var(--yt-text-primary);
+    }
+
+    .settings-menu {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .settings-menu-item {
+        display: flex;
+        align-items: center;
+        padding: 10px 12px;
+        border-radius: 10px;
+        color: var(--yt-text-primary);
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+        border: none;
+        background: none;
+        width: 100%;
+        text-align: left;
+    }
+
+    .settings-menu-item:hover {
+        background-color: var(--yt-hover-bg);
+    }
+
+    .settings-menu-item.active {
+        background-color: var(--yt-hover-bg);
+        font-weight: 700;
+    }
+
+    .settings-content {
+        flex: 1;
+        max-width: 856px;
+    }
+
+    .settings-section {
+        display: none;
+        margin-bottom: 40px;
+    }
+
+    .settings-section.active {
+        display: block;
+    }
+
+    .section-title {
+        font-size: 20px;
+        font-weight: 700;
+        margin: 0 0 8px 0;
+        color: var(--yt-text-primary);
+    }
+
+    .section-subtitle {
+        font-size: 14px;
+        color: var(--yt-text-secondary);
+        margin: 0 0 24px 0;
+        line-height: 1.4;
+    }
+
+    .setting-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 16px 0;
+        border-bottom: 1px solid var(--yt-border-color);
+    }
+
+    .setting-row:last-child {
+        border-bottom: none;
+    }
+
+    .setting-label-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding-right: 24px;
+    }
+
+    .setting-label {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--yt-text-primary);
+    }
+
+    .setting-description {
+        font-size: 12px;
+        color: var(--yt-text-secondary);
+        line-height: 1.4;
+    }
+
+    .setting-select {
+        background-color: var(--yt-search-bg);
+        color: var(--yt-text-primary);
+        border: 1px solid var(--yt-border-color);
+        padding: 8px 12px;
+        border-radius: 8px;
+        font-size: 14px;
+        outline: none;
+        cursor: pointer;
+    }
+
+    .setting-select:focus {
+        border-color: #3ea6ff;
+    }
+
+    .yt-btn-text {
+        color: #3ea6ff;
+        background: none;
+        border: none;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        padding: 8px 12px;
+        border-radius: 18px;
+        transition: background 0.2s;
+        text-decoration: none;
+        display: inline-block;
+    }
+
+    .yt-btn-text:hover {
+        background-color: rgba(62, 166, 255, 0.15);
+    }
+
+    .yt-btn-danger {
+        color: #ff4e4e;
+    }
+
+    .yt-btn-danger:hover {
+        background-color: rgba(255, 78, 78, 0.15);
+    }
+
+    @media (max-width: 856px) {
+        .settings-container {
+            flex-direction: column;
+            gap: 16px;
+        }
+        .settings-nav {
+            width: 100%;
+            border-bottom: 1px solid var(--yt-border-color);
+            padding-bottom: 12px;
+        }
+        .settings-menu {
+            flex-direction: row;
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+        .settings-menu-item {
+            display: inline-flex;
+            width: auto;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="settings-container">
+    <nav class="settings-nav">
+        <h1 class="settings-nav-title">設定</h1>
+        <div class="settings-menu">
+            <button class="settings-menu-item active" data-target="playback">再生とパフォーマンス</button>
+            <button class="settings-menu-item" data-target="appearance">デザイン・UI</button>
+            <button class="settings-menu-item" data-target="history">履歴とプライバシー</button>
+        </div>
+    </nav>
+
+    <div class="settings-content">
+        
+        <!-- 1. 再生とパフォーマンス -->
+        <section id="playback" class="settings-section active">
+            <h2 class="section-title">再生とパフォーマンス</h2>
+            <p class="section-subtitle">動画再生のデフォルトモードやプレーヤーの動作を設定します。</p>
+
+            <div class="setting-row">
+                <div class="setting-label-group">
+                    <span class="setting-label">デフォルト再生形式 (プレイヤータイプ)</span>
+                    <span class="setting-description">動画再生ページで初期使用されるソース（Stream / NoCookie / Education）を設定します。</span>
+                </div>
+                <select class="setting-select" id="pref-embed-mode">
+                    <option value="stream">Stream (独自ストリーム / デフォルト)</option>
+                    <option value="nocookie">NoCookie (YouTube 埋め込み)</option>
+                    <option value="edu">Education (YouTube 教育用埋め込み)</option>
+                </select>
+            </div>
+        </section>
+
+        <!-- 2. デザイン・UI -->
+        <section id="appearance" class="settings-section">
+            <h2 class="section-title">デザイン・UI</h2>
+            <p class="section-subtitle">画面のテーマやUIの表示スタイルを調整します。</p>
+
+            <div class="setting-row">
+                <div class="setting-label-group">
+                    <span class="setting-label">テーマ（ダーク / ライト）</span>
+                    <span class="setting-description">外観のカラーテーマを選択します。</span>
+                </div>
+                <select class="setting-select" id="pref-theme">
+                    <option value="system">OSの設定に合わせる</option>
+                    <option value="dark">ダークテーマ</option>
+                    <option value="light">ライトテーマ</option>
+                </select>
+            </div>
+        </section>
+
+        <!-- 3. 履歴とプライバシー -->
+        <section id="history" class="settings-section">
+            <h2 class="section-title">履歴とプライバシー</h2>
+            <p class="section-subtitle">仙人Tubeに保存された各種履歴データを管理・削除します。</p>
+
+            <div class="setting-row">
+                <div class="setting-label-group">
+                    <span class="setting-label">検索履歴の削除</span>
+                    <span class="setting-description">検索ボックスの補完で使用されるローカル検索履歴を削除します。</span>
+                </div>
+                <button class="yt-btn-text yt-btn-danger" id="clear-search-history">検索履歴を削除</button>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-label-group">
+                    <span class="setting-label">再生履歴のクリア</span>
+                    <span class="setting-description">ブラウザに記憶された動画の再生・視聴履歴をすべて消去します。</span>
+                </div>
+                <button class="yt-btn-text yt-btn-danger" id="clear-watch-history">再生履歴をクリア</button>
+            </div>
+        </section>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function () {
+        // --- タブ切り替え ---
+        $('.settings-menu-item').click(function () {
+            $('.settings-menu-item').removeClass('active');
+            $(this).addClass('active');
+
+            const target = $(this).data('target');
+            $('.settings-section').removeClass('active');
+            $('#' + target).addClass('active');
+        });
+
+        // --- 設定値の読み込みと初期化 ---
+        const savedEmbedMode = localStorage.getItem('pref_embed_mode') || 'stream';
+        const savedTheme = localStorage.getItem('pref_theme') || 'system';
+
+        $('#pref-embed-mode').val(savedEmbedMode);
+        $('#pref-theme').val(savedTheme);
+
+        // --- 設定変更イベント ---
+        // 1. 再生モード変更
+        $('#pref-embed-mode').change(function () {
+            const val = $(this).val();
+            localStorage.setItem('pref_embed_mode', val);
+            alert('デフォルト再生形式を更新しました: ' + val);
+        });
+
+        // 2. テーマ変更
+        $('#pref-theme').change(function () {
+            const theme = $(this).val();
+            localStorage.setItem('pref_theme', theme);
+            applyTheme(theme);
+        });
+
+        function applyTheme(theme) {
+            if (theme === 'dark') {
+                $('html').css('color-scheme', 'dark');
+            } else if (theme === 'light') {
+                $('html').css('color-scheme', 'light');
+            } else {
+                $('html').css('color-scheme', 'normal');
+            }
+        }
+
+        // 3. 履歴削除
+        $('#clear-search-history').click(function () {
+            if (confirm('検索履歴をすべて削除してもよろしいですか？')) {
+                localStorage.removeItem('yt_search_history');
+                alert('検索履歴を削除しました。');
+            }
+        });
+
+        $('#clear-watch-history').click(function () {
+            if (confirm('再生履歴をすべて削除してもよろしいですか？')) {
+                localStorage.removeItem('yt_watch_history');
+                alert('再生履歴をクリアしました。');
+            }
+        });
+    });
+</script>
+{% endblock %}
