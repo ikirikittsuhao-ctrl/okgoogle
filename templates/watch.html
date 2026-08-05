@@ -5,9 +5,6 @@
 {% block extra_css %}
 <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 <style>
-    /* ==========================================================================
-       YouTube Official Color Tokens & UI Variable Design
-       ========================================================================== */
     :root {
         --yt-spec-base-background: #0f0f0f;
         --yt-spec-static-overlay-background-solid: #212121;
@@ -47,14 +44,13 @@
         -webkit-font-smoothing: antialiased;
     }
 
-    /* 1. 外枠(base.html)との間隔を短縮（余白を抑えてモダンな公式UIに近接） */
     .yt-watch-page-container {
         display: grid;
         grid-template-columns: minmax(0, 1fr) 402px;
         gap: 24px;
         max-width: 1754px;
         margin: 0 auto;
-        padding: 12px 24px 0 24px; /* 上部・左右の余白を縮小 */
+        padding: 12px 24px 0 24px;
         box-sizing: border-box;
     }
 
@@ -68,7 +64,7 @@
     @media (max-width: 1010px) {
         .yt-watch-page-container {
             grid-template-columns: 1fr;
-            padding: 0 0 0 0; /* モバイル時は隙間なし */
+            padding: 0;
         }
     }
 
@@ -77,7 +73,6 @@
         min-width: 0;
     }
 
-    /* ビデオプレイヤー（角丸・シャドウの公式デザイン適用） */
     #player-wrapper {
         position: relative;
         width: 100%;
@@ -127,7 +122,6 @@
 
     @keyframes yt-spin { to { transform: rotate(360deg); } }
 
-    /* タイトルとボタンアクション群の質感向上 */
     .yt-video-title {
         font-size: 1.25rem;
         font-weight: 700;
@@ -281,7 +275,6 @@
         background-color: var(--yt-spec-button-chip-hover);
     }
 
-    /* 概要欄カード */
     .yt-description-container {
         background-color: var(--yt-spec-badge-chip-background);
         border-radius: 12px;
@@ -309,7 +302,6 @@
         word-break: break-word;
     }
 
-    /* 2. スケルトンアニメーション (ローディング時に公式同等の枠を表示) */
     .skeleton-box {
         background: var(--yt-skeleton-bg);
         background-size: 400% 100%;
@@ -349,7 +341,6 @@
         gap: 6px;
     }
 
-    /* サイドバー関連動画 */
     .yt-secondary-column {
         display: flex;
         flex-direction: column;
@@ -410,7 +401,6 @@
         line-height: 1.3;
     }
 
-    /* Dropdown UI Design */
     .yt-custom-select {
         position: relative;
         display: inline-block;
@@ -447,8 +437,7 @@
         background: var(--yt-spec-button-chip-hover);
     }
 
-    /* Modal / Floating UI */
-    .yt-modal-overlay, .yt-bottom-modal-overlay {
+    .yt-modal-overlay {
         position: fixed;
         top: 0; left: 0; width: 100%; height: 100%;
         background: rgba(0, 0, 0, 0.7);
@@ -662,7 +651,7 @@
                     </button>
 
                     <div class="yt-custom-select" id="qualitySelect">
-                        <button class="yt-pill-button" id="qualityTrigger">
+                        <button class="yt-pill-button" id="qualityTrigger" onclick="toggleQualityDropdown(event)">
                             <i class="fas fa-cog"></i>
                             <span id="qualityLabel">画質: 自動</span>
                             <i class="fas fa-chevron-down" style="font-size: 0.75rem; margin-left: 2px;"></i>
@@ -695,7 +684,7 @@
             </div>
 
             <div class="yt-comments-container">
-                <div class="yt-comments-header"><span>コメント</span></div>
+                <div class="yt-comments-header" style="font-weight:700; margin-bottom:16px;"><span>コメント</span></div>
                 <div id="comment-list">
                     {% if comments %}
                         {% for c in comments %}
@@ -750,87 +739,88 @@
             {% endif %}
         </div>
     </div>
-{% endblock %}
 
-{% block extra_js %}
 <script>
-    const videoId = "{{ videoid }}";
     const video = document.getElementById('video-player');
     const audio = document.getElementById('audio-sync');
-    const loader = document.getElementById('loader');
+    const iframeContainer = document.getElementById('iframe-container');
+    const videoId = "{{ videoid }}";
+    let hlsInstance = null;
 
-    // 多重バックエンド（Invidious, Piped, Sia等）フォールバック定義
-    const API_INSTANCES = [
-        `https://inv.riverside.rocks/api/v1/videos/${videoId}`,
-        `https://invidious.nerdvpn.de/api/v1/videos/${videoId}`,
-        `https://pipedapi.kavin.rocks/streams/${videoId}`
-    ];
+    // --- 音声・動画の同期ロジック ---
+    video.addEventListener('play', () => { if (audio.src) audio.play(); });
+    video.addEventListener('pause', () => { if (audio.src) audio.pause(); });
+    video.addEventListener('seeking', () => { if (audio.src) audio.currentTime = video.currentTime; });
+    video.addEventListener('ratechange', () => { if (audio.src) audio.playbackRate = video.playbackRate; });
 
-    // データの取得漏れチェック＆フォールバック試行処理
-    async function fetchFallbackData() {
-        const hasTitle = "{{ video_title }}" !== "";
-        const hasRecs = {{ 'true' if recommended_videos else 'false' }};
+    // --- UI モール・アラート制御 ---
+    function openModal() { document.getElementById('dl-modal').style.display = 'flex'; }
+    function closeModal() { document.getElementById('dl-modal').style.display = 'none'; }
+    
+    function showAlert(text) {
+        const el = document.getElementById('custom-alert');
+        document.getElementById('alert-text').innerText = text;
+        el.style.display = 'block';
+        setTimeout(() => { el.style.display = 'none'; }, 3000);
+    }
 
-        if (hasTitle && hasRecs) return; // 既存のサーバーサイドレンダリングで取得できている場合はパス
+    // --- ドロップダウン & コントロールメニュー ---
+    function toggleQualityDropdown(e) {
+        e.stopPropagation();
+        document.getElementById('qualitySelect').classList.toggle('open');
+    }
 
-        showNotify("詳細情報をバックエンドから再取得中...");
+    document.addEventListener('click', () => {
+        document.getElementById('qualitySelect').classList.remove('open');
+    });
 
-        for (let url of API_INSTANCES) {
-            try {
-                const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
-                if (!res.ok) continue;
-                const data = await res.json();
+    document.querySelectorAll('.yt-dropdown-item').forEach(item => {
+        item.addEventListener('click', function() {
+            document.querySelectorAll('.yt-dropdown-item').forEach(i => i.classList.remove('selected'));
+            this.classList.add('selected');
+            
+            const videoUrl = this.getAttribute('data-value');
+            const audioUrl = this.getAttribute('data-audio');
+            const type = this.getAttribute('data-type');
+            
+            document.getElementById('qualityLabel').innerText = "画質: " + this.innerText.trim();
 
-                // 取得データの反映処理
-                if (!hasTitle && data.title) {
-                    document.getElementById('video-title').innerText = data.title;
-                    document.title = data.title + " - YouTube";
-                }
+            changeSource(videoUrl, audioUrl, type);
+        });
+    });
 
-                if (!hasRecs && (data.recommendedVideos || data.relatedStreams)) {
-                    const recs = data.recommendedVideos || data.relatedStreams;
-                    renderRecommendations(recs);
-                }
+    function changeSource(vUrl, aUrl, type) {
+        if (hlsInstance) {
+            hlsInstance.destroy();
+            hlsInstance = null;
+        }
 
-                showNotify("情報を読み込みました");
-                break; // 成功したためループを抜ける
-            } catch (e) {
-                console.warn("Instance failed, trying next...", url);
+        iframeContainer.style.display = 'none';
+        iframeContainer.innerHTML = '';
+        video.style.display = 'block';
+
+        if (type === 'm3u8') {
+            if (Hls.isSupported()) {
+                hlsInstance = new Hls();
+                hlsInstance.loadSource(vUrl);
+                hlsInstance.attachMedia(video);
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = vUrl;
+            }
+            audio.removeAttribute('src');
+        } else {
+            video.src = vUrl;
+            if (aUrl) {
+                audio.src = aUrl;
+                audio.currentTime = video.currentTime;
+            } else {
+                audio.removeAttribute('src');
             }
         }
+        video.play();
     }
 
-    // 動的に関連動画を描画する関数
-    function renderRecommendations(list) {
-        const container = document.getElementById('recommend-column');
-        container.innerHTML = ''; // スケルトン枠を消去
-
-        list.slice(0, 15).forEach(v => {
-            const id = v.videoId || v.url?.replace('/watch?v=', '');
-            const title = v.title;
-            const author = v.author || v.uploaderName || '';
-            const views = v.viewCountText || (v.views ? `${v.views.toLocaleString()} 回視聴` : '');
-
-            const card = document.createElement('a');
-            card.className = 'yt-recommend-card';
-            card.href = `/watch?v=${id}`;
-            card.innerHTML = `
-                <div class="yt-recommend-thumb-wrapper">
-                    <img src="https://i.ytimg.com/vi/${id}/mqdefault.jpg" class="yt-recommend-thumb" loading="lazy">
-                </div>
-                <div class="yt-recommend-details">
-                    <div class="yt-recommend-title">${title}</div>
-                    <div class="yt-recommend-meta">
-                        <div>${author}</div>
-                        <div>${views}</div>
-                    </div>
-                </div>
-            `;
-            container.appendChild(card);
-        });
-    }
-
-    // UI制御関数群
+    // --- フローティングコントロール操作 ---
     function toggleControlMenu() {
         const menu = document.getElementById('ctrlMenu');
         menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
@@ -838,35 +828,48 @@
 
     function toggleLoop(el) {
         video.loop = !video.loop;
-        el.classList.toggle('active');
-        showNotify(video.loop ? "ループ再生を有効にしました" : "ループ再生を解除しました");
+        el.classList.toggle('active', video.loop);
+        showAlert(video.loop ? "ループ再生をONにしました" : "ループ再生をOFFにしました");
     }
 
     function toggleMute(el) {
         video.muted = !video.muted;
         audio.muted = video.muted;
-        el.classList.toggle('active');
-        showNotify(video.muted ? "音声をミュートしました" : "ミュートを解除しました");
+        el.classList.toggle('active', video.muted);
+        showAlert(video.muted ? "ミュートにしました" : "ミュートを解除しました");
     }
 
-    function showNotify(msg, isError = false) {
-        const alertBox = document.getElementById("custom-alert");
-        const alertIcon = document.getElementById("alert-icon");
-        const alertText = document.getElementById("alert-text");
-        alertText.innerText = msg;
-        alertIcon.className = isError ? "fas fa-exclamation-triangle" : "fas fa-info-circle";
-        alertIcon.style.color = isError ? "#ff4d4f" : "var(--yt-spec-text-primary)";
-        
-        alertBox.style.display = "block";
-        setTimeout(() => { alertBox.style.display = "none"; }, 3000);
+    function openQualityFromCtrl() {
+        document.getElementById('qualitySelect').classList.add('open');
     }
 
-    function openModal() { document.getElementById('dl-modal').style.display = 'flex'; }
-    function closeModal() { document.getElementById('dl-modal').style.display = 'none'; }
+    function toggleSourceOptions() {
+        document.getElementById('srcOpts').classList.toggle('show');
+    }
 
-    // ページロード時初期化
-    window.addEventListener('DOMContentLoaded', () => {
-        fetchFallbackData();
-    });
+    function setExternalSource(mode) {
+        document.querySelectorAll('.yt-sub-item').forEach(i => i.classList.remove('selected'));
+        document.getElementById(`src-${mode}`).classList.add('selected');
+
+        if (mode === 'stream') {
+            iframeContainer.style.display = 'none';
+            iframeContainer.innerHTML = '';
+            video.style.display = 'block';
+            video.play();
+        } else {
+            video.pause();
+            video.style.display = 'none';
+            audio.removeAttribute('src');
+            iframeContainer.style.display = 'block';
+            
+            let embedUrl = "";
+            if (mode === 'nocookie') {
+                embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1`;
+            } else if (mode === 'edu') {
+                embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+            }
+            iframeContainer.innerHTML = `<iframe src="${embedUrl}" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+        }
+    }
 </script>
 {% endblock %}
