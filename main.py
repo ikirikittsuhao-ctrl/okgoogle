@@ -210,7 +210,7 @@ async def fetch_invidious(
       for instance in instances:
         try:
           url = f"{instance.rstrip('/')}/api/v1{endpoint}"
-          response = await client_session.get(url, params=params, timeout=3.0)
+          response = await client_session.get(url, params=params, timeout=4.0)
           response.raise_for_status()
           return response.json()
         except Exception as e:
@@ -222,11 +222,11 @@ async def fetch_invidious(
     else:
       fastest = await get_fastest_invidious_instance(list_url)
       instances = [fastest] + [i for i in base_instances if i != fastest]
-      target_instances = instances[:5]
+      target_instances = instances[:8]
 
       async def task(instance):
         url = f"{instance.rstrip('/')}/api/v1{endpoint}"
-        resp = await client_session.get(url, params=params, timeout=2.8)
+        resp = await client_session.get(url, params=params, timeout=3.5)
         resp.raise_for_status()
         return resp.json()
 
@@ -245,7 +245,12 @@ async def fetch_invidious(
           continue
 
       for t in pending:
-        t.cancel()
+        if not t.done():
+          t.cancel()
+          try:
+            await t
+          except asyncio.CancelledError:
+            pass
 
       if res is not None:
         return res
@@ -256,7 +261,7 @@ async def fetch_invidious(
         try:
           url = f"{inst.rstrip('/')}/api/v1{endpoint}"
           response = await client_session.get(
-              url, params=params, timeout=2.5
+              url, params=params, timeout=3.5
           )
           response.raise_for_status()
           return response.json()
@@ -775,6 +780,10 @@ async def fetch_fastest_stream_urls(
           for t in tasks:
             if not t.done():
               t.cancel()
+              try:
+                await t
+              except asyncio.CancelledError:
+                pass
           return res
       except Exception:
         continue
@@ -1083,7 +1092,7 @@ async def search(
 
       async def fetch_task(instance):
         url = f"{instance.rstrip('/')}/api/v1/search"
-        resp = await client_session.get(url, params=params, timeout=2.8)
+        resp = await client_session.get(url, params=params, timeout=3.5)
         resp.raise_for_status()
         return resp.json()
 
@@ -1104,7 +1113,12 @@ async def search(
           continue
 
       for task in pending:
-        task.cancel()
+        if not task.done():
+          task.cancel()
+          try:
+            await task
+          except asyncio.CancelledError:
+            pass
 
       if data is None:
         data = await fetch_invidious("/search", params, list_type="search")
@@ -1260,7 +1274,6 @@ async def watch(
         info_task, stream_task, comment_task, return_exceptions=True
     )
 
-    # 堅牢なエラー制御（両方失敗した時のみ例外を投げる）
     if isinstance(video_data, Exception) and isinstance(stream_res, Exception):
       raise video_data
 
