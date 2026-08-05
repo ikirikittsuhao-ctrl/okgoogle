@@ -1625,6 +1625,8 @@ async def suggest(keyword: str):
                 "client": "firefox",
                 "q": keyword,
                 "hl": "ja",
+                "ie": "utf-8",  # 入力文字コードをUTF-8に指定
+                "oe": "utf-8",  # 出力文字コードをUTF-8に指定（★これが必須）
             }
             resp = await client_session.get(url, params=params, timeout=2.0)
             
@@ -1639,7 +1641,6 @@ async def suggest(keyword: str):
         return []
 
     return await fetch_with_inflight(cache_key, _do_fetch, ttl=600.0)
-
 
 
 @app.get("/proxy/thumb")
