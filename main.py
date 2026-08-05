@@ -1616,28 +1616,30 @@ async def channel(
 
 @app.get("/suggest")
 async def suggest(keyword: str):
-  cache_key = f"suggest:{keyword}"
+    cache_key = f"suggest:{keyword}"
 
-  async def _do_fetch():
-    search_instances = await get_invidious_instances_from_url(
-        INVIDIOUS_SEARCH_LIST_URL
-    )
-    instances = list(search_instances)
-    random.shuffle(instances)
-    for instance in instances:
-      try:
-        resp = await client_session.get(
-            f"{instance.rstrip('/')}/api/v1/search/suggestions",
-            params={"q": keyword},
-            timeout=1.2,
-        )
-        if resp.status_code == 200:
-          return resp.json().get("suggestions", [])
-      except:
-        continue
-    return []
+    async def _do_fetch():
+        try:
+            url = "https://suggestqueries.google.com/complete/search"
+            params = {
+                "client": "firefox",
+                "q": keyword,
+                "hl": "ja",
+            }
+            resp = await client_session.get(url, params=params, timeout=2.0)
+            
+            if resp.status_code == 200:
+                text = resp.content.decode("utf-8", errors="replace")
+                data = json.loads(text)
+                
+                if isinstance(data, list) and len(data) > 1 and isinstance(data[1], list):
+                    return data[1]
+        except Exception:
+            pass
+        return []
 
-  return await fetch_with_inflight(cache_key, _do_fetch, ttl=600.0)
+    return await fetch_with_inflight(cache_key, _do_fetch, ttl=600.0)
+
 
 
 @app.get("/proxy/thumb")
