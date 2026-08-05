@@ -2,11 +2,160 @@
 
 {% block title %}ホーム - 仙人Tube{% endblock %}
 
+{% block extra_css %}
+<style>
+    /* セクションタイトルのスタイル */
+    .section-title {
+        font-size: 20px;
+        font-weight: 700;
+        margin: 0 0 20px 0;
+        color: var(--yt-text-primary);
+    }
+
+    /* レスポンシブグリッドレイアウト */
+    .video-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 20px 16px;
+        width: 100%;
+    }
+
+    /* 動画カードのベーススタイルと基本アニメーション */
+    .video-card {
+        display: flex;
+        flex-direction: column;
+        text-decoration: none;
+        color: var(--yt-text-primary);
+        border-radius: 12px;
+        overflow: hidden;
+        transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1), 
+                    box-shadow 0.25s cubic-bezier(0.2, 0, 0, 1);
+        /* 初期読み込み時のフェードインアニメーション */
+        animation: fadeInCard 0.4s ease-out forwards;
+        will-change: transform;
+    }
+
+    /* ホバー時のホバー＆浮き上がり効果 */
+    .video-card:hover {
+        transform: translateY(-4px);
+    }
+
+    /* サムネイル容器（16:9 アスペクト比固定） */
+    .video-thumbnail {
+        position: relative;
+        width: 100%;
+        padding-top: 56.25%; /* 16:9 Aspect Ratio */
+        background-color: var(--yt-chip-bg);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .video-thumbnail img {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    /* ホバー時のサムネイル微拡大（ズームイン効果） */
+    .video-card:hover .video-thumbnail img {
+        transform: scale(1.05);
+    }
+
+    /* 動画情報のレイアウト */
+    .video-info {
+        display: flex;
+        padding: 12px 0 0 0;
+        gap: 12px;
+    }
+
+    .video-details {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-width: 0; /* テキスト溢れ防止 */
+    }
+
+    /* タイトル（2行で省略表示） */
+    .video-title {
+        font-size: 15px;
+        font-weight: 500;
+        line-height: 1.4;
+        margin-bottom: 6px;
+        color: var(--yt-text-primary);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        transition: color 0.2s ease;
+    }
+
+    .video-card:hover .video-title {
+        color: #3ea6ff; /* ホバー時にうっすら青く発色 */
+    }
+
+    /* 投稿者とメタ情報 */
+    .video-author,
+    .video-meta {
+        font-size: 13px;
+        color: var(--yt-text-secondary);
+        line-height: 1.3;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .video-author {
+        margin-bottom: 2px;
+    }
+
+    .video-author:hover {
+        color: var(--yt-text-primary);
+    }
+
+    /* カード登場用のキーフレーム */
+    @keyframes fadeInCard {
+        from {
+            opacity: 0;
+            transform: translateY(12px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* モバイル・画面幅縮小時の調整 */
+    @media (max-width: 600px) {
+        .video-grid {
+            grid-template-columns: 1fr;
+            gap: 16px;
+        }
+
+        .video-thumbnail {
+            border-radius: 0; /* スマホ全幅表示時に角丸を解除（YouTube公式風） */
+        }
+        
+        .video-card {
+            border-radius: 0;
+        }
+
+        .video-info {
+            padding: 10px 12px 0 12px;
+        }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <h2 class="section-title">おすすめ</h2>
 <div class="video-grid">
     {% for video in recommended_videos %}
-    <a href="/watch?v={{ video.videoId }}" class="video-card">
+    <a href="/watch?v={{ video.videoId }}" class="video-card" style="animation-delay: {{ loop.index0 * 0.05 }}s;">
         <div class="video-thumbnail">
             <img src="/thumbnail?v={{ video.videoId }}" alt="{{ video.title }}" loading="lazy">
         </div>
