@@ -593,11 +593,22 @@
                 <div class="yt-sub-item" id="src-edu" onclick="setExternalSource('edu')">Education</div>
                 <div class="yt-sub-item selected" id="src-stream" onclick="setExternalSource('stream')">Stream (デフォルト)</div>
             </div>
+            <div class="yt-control-item" id="streamApiToggle" onclick="toggleStreamApiOptions()">
+                <span>Stream取得API切替</span><i class="fas fa-play-circle"></i>
+            </div>
+            <div class="yt-source-options" id="streamApiOpts">
+                <div class="yt-sub-item selected" id="stream-api-default" onclick="selectStreamApi('default')">デフォルト API</div>
+                <div class="yt-sub-item" id="stream-api-piped" onclick="selectStreamApi('piped')">Piped API</div>
+                <div class="yt-sub-item" id="stream-api-invidious" onclick="selectStreamApi('invidious')">Invidious API</div>
+                <div class="yt-sub-item" id="stream-api-cobalt" onclick="selectStreamApi('cobalt')">Cobalt API</div>
+            </div>
             <div class="yt-control-item" id="apiToggle" onclick="toggleApiOptions()">
                 <span>使用API切替</span><i class="fas fa-server"></i>
             </div>
             <div class="yt-source-options" id="apiOpts">
                 <div class="yt-sub-item selected" id="api-default" onclick="selectApi('default')">デフォルト API</div>
+                <div class="yt-sub-item" id="api-sia" onclick="selectApi('sia')">sia API</div>
+                <div class="yt-sub-item" id="api-sennin" onclick="selectApi('sennin')">sennin API</div>
                 {% if available_apis %}
                     {% for api in available_apis %}
                     <div class="yt-sub-item" id="api-{{ api.id }}" onclick="selectApi('{{ api.id }}')">{{ api.name }}</div>
@@ -861,13 +872,18 @@
         document.getElementById('srcOpts').classList.toggle('show');
     }
 
+    function toggleStreamApiOptions() {
+        document.getElementById('streamApiOpts').classList.toggle('show');
+    }
+
     function toggleApiOptions() {
         document.getElementById('apiOpts').classList.toggle('show');
     }
 
     function setExternalSource(mode) {
         document.querySelectorAll('#srcOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
-        document.getElementById(`src-${mode}`).classList.add('selected');
+        const targetElem = document.getElementById(`src-${mode}`);
+        if (targetElem) targetElem.classList.add('selected');
 
         if (mode === 'stream') {
             iframeContainer.style.display = 'none';
@@ -886,8 +902,24 @@
             } else if (mode === 'edu') {
                 embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
             }
-            iframeContainer.innerHTML = `<iframe src="${embedUrl}" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+            iframeContainer.innerHTML = `<iframe src="${embedUrl}" allow="autoplay; encrypted-media" allowfullscreen style="width:100%; height:100%; border:none;"></iframe>`;
         }
+    }
+
+    function selectStreamApi(apiId) {
+        document.querySelectorAll('#streamApiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
+        const selectedElem = document.getElementById(`stream-api-${apiId}`);
+        if (selectedElem) selectedElem.classList.add('selected');
+
+        localStorage.setItem('selected_stream_api', apiId);
+        
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set('stream_api', apiId);
+        
+        showAlert(`Stream APIを「${apiId}」に変更します...`);
+        setTimeout(() => {
+            window.location.href = currentUrl.toString();
+        }, 500);
     }
 
     function selectApi(apiId) {
@@ -914,6 +946,13 @@
         const activeApiElem = document.getElementById(`api-${currentApi}`);
         if (activeApiElem) {
             activeApiElem.classList.add('selected');
+        }
+
+        const currentStreamApi = urlParams.get('stream_api') || localStorage.getItem('selected_stream_api') || 'default';
+        document.querySelectorAll('#streamApiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
+        const activeStreamApiElem = document.getElementById(`stream-api-${currentStreamApi}`);
+        if (activeStreamApiElem) {
+            activeStreamApiElem.classList.add('selected');
         }
     });
 </script>
