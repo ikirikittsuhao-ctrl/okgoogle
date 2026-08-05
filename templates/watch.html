@@ -593,6 +593,20 @@
                 <div class="yt-sub-item" id="src-edu" onclick="setExternalSource('edu')">Education</div>
                 <div class="yt-sub-item selected" id="src-stream" onclick="setExternalSource('stream')">Stream (デフォルト)</div>
             </div>
+            <div class="yt-control-item" id="apiToggle" onclick="toggleApiOptions()">
+                <span>使用API切替</span><i class="fas fa-server"></i>
+            </div>
+            <div class="yt-source-options" id="apiOpts">
+                <div class="yt-sub-item selected" id="api-default" onclick="selectApi('default')">デフォルト API</div>
+                {% if available_apis %}
+                    {% for api in available_apis %}
+                    <div class="yt-sub-item" id="api-{{ api.id }}" onclick="selectApi('{{ api.id }}')">{{ api.name }}</div>
+                    {% endfor %}
+                {% else %}
+                    <div class="yt-sub-item" id="api-piped" onclick="selectApi('piped')">Piped API</div>
+                    <div class="yt-sub-item" id="api-invidious" onclick="selectApi('invidious')">Invidious API</div>
+                {% endif %}
+            </div>
         </div>
         <div class="yt-control-trigger" onclick="toggleControlMenu()">
             <i class="fas fa-cog"></i>
@@ -847,8 +861,12 @@
         document.getElementById('srcOpts').classList.toggle('show');
     }
 
+    function toggleApiOptions() {
+        document.getElementById('apiOpts').classList.toggle('show');
+    }
+
     function setExternalSource(mode) {
-        document.querySelectorAll('.yt-sub-item').forEach(i => i.classList.remove('selected'));
+        document.querySelectorAll('#srcOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
         document.getElementById(`src-${mode}`).classList.add('selected');
 
         if (mode === 'stream') {
@@ -871,5 +889,32 @@
             iframeContainer.innerHTML = `<iframe src="${embedUrl}" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
         }
     }
+
+    function selectApi(apiId) {
+        document.querySelectorAll('#apiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
+        const selectedElem = document.getElementById(`api-${apiId}`);
+        if (selectedElem) selectedElem.classList.add('selected');
+
+        localStorage.setItem('selected_api', apiId);
+        
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set('api', apiId);
+        
+        showAlert(`APIを「${apiId}」に変更します...`);
+        setTimeout(() => {
+            window.location.href = currentUrl.toString();
+        }, 500);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentApi = urlParams.get('api') || localStorage.getItem('selected_api') || 'default';
+        
+        document.querySelectorAll('#apiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
+        const activeApiElem = document.getElementById(`api-${currentApi}`);
+        if (activeApiElem) {
+            activeApiElem.classList.add('selected');
+        }
+    });
 </script>
 {% endblock %}
