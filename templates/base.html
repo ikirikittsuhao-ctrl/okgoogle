@@ -569,22 +569,6 @@
                     .appendTo(ul);
             };
 
-            // 通知トーストメッセージの更新処理
-            const messages = [
-                "仙人Tubeを一から改良しました",
-                "エラーの時は時間をおこう",
-                "再生できないときはリロードしてね"
-            ];
-            let msgIdx = 0;
-            setInterval(() => {
-                if ($("#statusToast").is(":visible")) {
-                    $("#infoContent").fadeOut(300, function () {
-                        $(this).text(messages[msgIdx]).fadeIn(300);
-                        msgIdx = (msgIdx + 1) % messages.length;
-                    });
-                }
-            }, 6000);
-
             $("#closeToast").click(function () {
                 $("#statusToast").fadeOut(300);
             });
