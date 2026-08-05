@@ -13,9 +13,6 @@ import httpx
 
 app = FastAPI()
 
-# 静的ファイルのマウントを追加
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
 templates = Jinja2Templates(directory="templates")
 templates.env.add_extension("jinja2.ext.do")
 
