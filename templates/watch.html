@@ -955,5 +955,28 @@
             activeStreamApiElem.classList.add('selected');
         }
     });
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- API設定読み込み ---
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentApi = urlParams.get('api') || localStorage.getItem('selected_api') || 'default';
+        
+        document.querySelectorAll('#apiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
+        const activeApiElem = document.getElementById(`api-${currentApi}`);
+        if (activeApiElem) {
+            activeApiElem.classList.add('selected');
+        }
+
+        const currentStreamApi = urlParams.get('stream_api') || localStorage.getItem('selected_stream_api') || 'default';
+        document.querySelectorAll('#streamApiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
+        const activeStreamApiElem = document.getElementById(`stream-api-${currentStreamApi}`);
+        if (activeStreamApiElem) {
+            activeStreamApiElem.classList.add('selected');
+        }
+
+        // --- 設定画面 (settings.html) で設定されたデフォルト再生形式の自動適用 ---
+        const preferredEmbedMode = localStorage.getItem('pref_embed_mode') || 'stream';
+        setExternalSource(preferredEmbedMode);
+    });
+
 </script>
 {% endblock %}
