@@ -291,6 +291,94 @@ async def fetch_invidious(
           last_err = e
           continue
       raise (
+async def fetch_invidious(
+    endpoint: str,
+    params: dict = None,
+    force_instance: str = None,
+    list_type: str = "video",
+):
+  param_str = json.dumps(params, sort_keys=True) if params else ""
+  cache_key = f"inv:{endpoint}:{param_str}:{force_instance or ''}:{list_type}"
+
+  async def _do_fetch():
+    list_url = (
+        INVIDIOUS_SEARCH_LIST_URL
+        if list_type == "search"
+        else INVIDIOUS_VIDEO_LIST_URL
+    )
+    base_instances = await get_invidious_instances_from_url(list_url)
+
+    if force_instance:
+      instances = [force_instance] + [
+          i for i in base_instances if i != force_instance
+      ]
+      last_error = None
+      for instance in instances:
+        try:
+          url = f"{instance.rstrip('/')}/api/v1{endpoint}"
+          response = await client_session.get(url, params=params, timeout=4.0)
+          response.raise_for_status()
+          res_data = response.json()
+          if _is_valid_invidious_response(res_data):
+            return res_data
+          else:
+            raise Exception("Invalid Invidious response format")
+        except Exception as e:
+          last_error = e
+          continue
+      raise last_error if last_error else Exception(
+          "All Invidious instances failed"
+      )
+    else:
+      fastest = await get_fastest_invidious_instance(list_url)
+      instances = [fastest] + [i for i in base_instances if i != fastest]
+      target_instances = instances[:8]
+
+      async def task(instance):
+        url = f"{instance.rstrip('/')}/api/v1{endpoint}"
+        resp = await client_session.get(url, params=params, timeout=3.5)
+        resp.raise_for_status()
+        res_data = resp.json()
+        if _is_valid_invidious_response(res_data):
+          return res_data
+        raise Exception("Invalid response from Invidious instance")
+
+      tasks = [asyncio.create_task(task(inst)) for inst in target_instances]
+
+      # 完了した順にループし、最初に「成功」したタスクの結果を採用する
+      for completed in asyncio.as_completed(tasks):
+        try:
+          res = await completed
+          if _is_valid_invidious_response(res):
+            # 正常に取得できたら残りの未完了タスクをキャンセル
+            for t in tasks:
+              if not t.done():
+                t.cancel()
+                try:
+                  await t
+                except asyncio.CancelledError:
+                  pass
+            return res
+        except Exception:
+          continue
+
+      # 並列ターゲットで全滅した場合は残りのインスタンスを順次試行
+      remaining = [i for i in instances if i not in target_instances]
+      last_err = None
+      for inst in remaining:
+        try:
+          url = f"{inst.rstrip('/')}/api/v1{endpoint}"
+          response = await client_session.get(
+              url, params=params, timeout=3.5
+          )
+          response.raise_for_status()
+          res_data = response.json()
+          if _is_valid_invidious_response(res_data):
+            return res_data
+        except Exception as e:
+          last_err = e
+          continue
+      raise (
           last_err
           if last_err
           else Exception("All Invidious instances failed")
