@@ -1124,57 +1124,12 @@ async def search(
     query_q = q if type != "short" else f"{q} shorts"
     params = {"q": query_q, "page": page, "type": search_type}
 
-    if force_instance:
-      data = await fetch_invidious(
-          "/search",
-          params,
-          force_instance=force_instance,
-          list_type="search",
-      )
-    else:
-      search_instances = await get_invidious_instances_from_url(
-          INVIDIOUS_SEARCH_LIST_URL
-      )
-      instances = list(search_instances)
-      random.shuffle(instances)
-      target_instances = instances[:4]
-
-      async def fetch_task(instance):
-        url = f"{instance.rstrip('/')}/api/v1/search"
-        resp = await client_session.get(url, params=params, timeout=3.5)
-        resp.raise_for_status()
-        res_data = resp.json()
-        if _is_valid_invidious_response(res_data):
-          return res_data
-        raise Exception("Invalid Invidious response format")
-
-      tasks = [
-          asyncio.create_task(fetch_task(inst)) for inst in target_instances
-      ]
-      done, pending = await asyncio.wait(
-          tasks, return_when=asyncio.FIRST_COMPLETED
-      )
-
-      data = None
-      for task in done:
-        try:
-          res_candidate = task.result()
-          if _is_valid_invidious_response(res_candidate):
-            data = res_candidate
-            break
-        except:
-          continue
-
-      for task in pending:
-        if not task.done():
-          task.cancel()
-          try:
-            await task
-          except asyncio.CancelledError:
-            pass
-
-      if data is None:
-        data = await fetch_invidious("/search", params, list_type="search")
+    data = await fetch_invidious(
+        "/search",
+        params,
+        force_instance=force_instance,
+        list_type="search",
+    )
 
     results_raw = data if isinstance(data, list) else []
 
