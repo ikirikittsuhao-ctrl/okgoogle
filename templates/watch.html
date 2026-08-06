@@ -290,11 +290,42 @@
         background-color: var(--yt-spec-button-chip-hover);
     }
 
+    /* 概要欄の折りたたみスタイル */
+    .yt-description-container.collapsed .yt-description-body {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .yt-description-toggle-btn {
+        background: none;
+        border: none;
+        color: var(--yt-spec-text-primary);
+        font-weight: 700;
+        cursor: pointer;
+        padding: 0;
+        margin-top: 8px;
+        font-size: 0.875rem;
+        display: inline-block;
+    }
+
     .yt-description-header {
         font-weight: 600;
         margin-bottom: 6px;
         display: flex;
+        justify-content: space-between;
+        align-items: center;
         gap: 12px;
+    }
+
+    .yt-api-badge {
+        font-size: 0.75rem;
+        color: var(--yt-spec-text-secondary);
+        background: rgba(255, 255, 255, 0.08);
+        padding: 2px 8px;
+        border-radius: 4px;
+        border: 1px solid var(--yt-spec-border-color);
     }
 
     .yt-description-body {
@@ -694,9 +725,10 @@
                 </div>
             </div>
 
-            <div class="yt-description-container">
+            <div class="yt-description-container collapsed" id="description-container">
                 <div class="yt-description-header">
                     <span>{{ view_count if view_count else '---' }} 回視聴</span>
+                    <span class="yt-api-badge" id="api-info-badge">取得API: <span id="current-api-name">取得中...</span></span>
                 </div>
                 <div class="yt-description-body" id="description-body">
                     {% if description %}
@@ -706,6 +738,7 @@
                         <div class="skeleton-box skeleton-text" style="width: 60%;"></div>
                     {% endif %}
                 </div>
+                <button class="yt-description-toggle-btn" id="desc-toggle-btn" onclick="toggleDescription()">...もっと見る</button>
             </div>
 
             <div class="yt-comments-container">
@@ -787,6 +820,31 @@
         document.getElementById('alert-text').innerText = text;
         el.style.display = 'block';
         setTimeout(() => { el.style.display = 'none'; }, 3000);
+    }
+
+    // --- 概要欄のもっと見る・一部表示トグル機能 ---
+    function toggleDescription() {
+        const container = document.getElementById('description-container');
+        const btn = document.getElementById('desc-toggle-btn');
+        if (container.classList.contains('collapsed')) {
+            container.classList.remove('collapsed');
+            btn.innerText = '一部を表示';
+        } else {
+            container.classList.add('collapsed');
+            btn.innerText = '...もっと見る';
+        }
+    }
+
+    // --- 使用API情報の更新表示 ---
+    function updateApiBadgeDisplay() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const currentApi = urlParams.get('api') || localStorage.getItem('selected_api') || 'default';
+        const currentStreamApi = urlParams.get('stream_api') || localStorage.getItem('selected_stream_api') || 'default';
+        
+        const badgeElem = document.getElementById('current-api-name');
+        if (badgeElem) {
+            badgeElem.innerText = `メイン: ${currentApi} / Stream: ${currentStreamApi}`;
+        }
     }
 
     // --- ドロップダウン & コントロールメニュー ---
@@ -954,6 +1012,8 @@
         if (activeStreamApiElem) {
             activeStreamApiElem.classList.add('selected');
         }
+
+        updateApiBadgeDisplay();
     });
     document.addEventListener('DOMContentLoaded', () => {
         // --- API設定読み込み ---
@@ -976,6 +1036,8 @@
         // --- 設定画面 (settings.html) で設定されたデフォルト再生形式の自動適用 ---
         const preferredEmbedMode = localStorage.getItem('pref_embed_mode') || 'stream';
         setExternalSource(preferredEmbedMode);
+
+        updateApiBadgeDisplay();
     });
 
 </script>
