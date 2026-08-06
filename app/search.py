@@ -32,6 +32,8 @@ PIPED_INSTANCES = [
 
 SENNIN_API_BASE = "https://discerning-adventure-production-ebfc.up.railway.app"
 
+RAPID_API_HOST = "ytstream-download-youtube-videos.p.rapidapi.com"
+
 _ENCRYPTED_KEYS = [
     "ZTYxNTE4MzAzNG1zaDJkZmRhMzFhNDdhNmYxMnAxZmE2Y2Nqc241OWExYTVlMDY0MTU=",
     "NjllMjk5OWE3OW1zaGNiNjU3MTg0YmE2NzMxY3AxNmY2ODRqc24zMjA1NGEwNzBiYTU=",
