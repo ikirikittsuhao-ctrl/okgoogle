@@ -185,6 +185,18 @@ async def get_fastest_invidious_instance(
   )
 
 
+def _is_valid_invidious_response(res):
+  if not res:
+    return False
+  if isinstance(res, dict):
+    if "error" in res or "message" in res:
+      return False
+    return True
+  if isinstance(res, list):
+    return True
+  return False
+
+
 async def fetch_invidious(
     endpoint: str,
     params: dict = None,
@@ -212,7 +224,11 @@ async def fetch_invidious(
           url = f"{instance.rstrip('/')}/api/v1{endpoint}"
           response = await client_session.get(url, params=params, timeout=4.0)
           response.raise_for_status()
-          return response.json()
+          res_data = response.json()
+          if _is_valid_invidious_response(res_data):
+            return res_data
+          else:
+            raise Exception("Invalid Invidious response format")
         except Exception as e:
           last_error = e
           continue
@@ -228,7 +244,10 @@ async def fetch_invidious(
         url = f"{instance.rstrip('/')}/api/v1{endpoint}"
         resp = await client_session.get(url, params=params, timeout=3.5)
         resp.raise_for_status()
-        return resp.json()
+        res_data = resp.json()
+        if _is_valid_invidious_response(res_data):
+          return res_data
+        raise Exception("Invalid response from Invidious instance")
 
       tasks = [asyncio.create_task(task(inst)) for inst in target_instances]
       done, pending = await asyncio.wait(
@@ -238,8 +257,9 @@ async def fetch_invidious(
       res = None
       for t in done:
         try:
-          res = t.result()
-          if res is not None:
+          r = t.result()
+          if _is_valid_invidious_response(r):
+            res = r
             break
         except Exception:
           continue
@@ -264,7 +284,9 @@ async def fetch_invidious(
               url, params=params, timeout=3.5
           )
           response.raise_for_status()
-          return response.json()
+          res_data = response.json()
+          if _is_valid_invidious_response(res_data):
+            return res_data
         except Exception as e:
           last_err = e
           continue
@@ -298,7 +320,9 @@ async def fetch_sennin_video_info(v: str):
     if resp.status_code == 200:
       data = resp.json()
       if data and not data.get("unavailable"):
-        return normalize_sennin_video_info(data)
+        norm_data = normalize_sennin_video_info(data)
+        norm_data["api_used"] = "sennin"
+        return norm_data
   except Exception:
     pass
   raise Exception("Sennin video info failed")
@@ -491,10 +515,35 @@ async def fetch_sia_video(v: str):
           "descriptionHtml": desc_html,
           "recommendedVideos": recommended,
           "thumbnail": data.get("thumbnail", ""),
+          "api_used": "sia",
       }
   except Exception:
     pass
   raise Exception("Sia video info failed")
+
+
+async def fetch_video_info_invidious_robust(v: str, force_instance: str = None) -> dict:
+  res = await fetch_invidious(
+      f"/videos/{v}", force_instance=force_instance, list_type="video"
+  )
+  if isinstance(res, dict) and not res.get("error") and (res.get("title") or res.get("videoId")):
+    res["api_used"] = "invidious"
+    return res
+  
+  base_instances = await get_invidious_instances_from_url(INVIDIOUS_VIDEO_LIST_URL)
+  for instance in base_instances:
+    try:
+      url = f"{instance.rstrip('/')}/api/v1/videos/{v}"
+      resp = await client_session.get(url, timeout=4.0)
+      if resp.status_code == 200:
+        data = resp.json()
+        if isinstance(data, dict) and not data.get("error") and (data.get("title") or data.get("videoId")):
+          data["api_used"] = "invidious"
+          return data
+    except Exception:
+      continue
+
+  raise Exception("Robust Invidious video info fetch failed")
 
 
 async def fetch_video_info(v: str, force_instance: str = None, api: str = None):
@@ -502,30 +551,24 @@ async def fetch_video_info(v: str, force_instance: str = None, api: str = None):
 
   async def _do_fetch():
     if api == "invidious":
-      return await fetch_invidious(
-          f"/videos/{v}", force_instance=force_instance, list_type="video"
-      )
+      return await fetch_video_info_invidious_robust(v, force_instance=force_instance)
     elif api == "sia":
       try:
         return await fetch_sia_video(v)
       except Exception:
-        return await fetch_invidious(
-            f"/videos/{v}", force_instance=force_instance, list_type="video"
-        )
+        return await fetch_video_info_invidious_robust(v, force_instance=force_instance)
     elif api == "piped":
-      return await fetch_piped_stream(v)
+      res = await fetch_piped_stream(v)
+      res["api_used"] = "piped"
+      return res
     elif api == "sennin":
       try:
         return await fetch_sennin_video_info(v)
       except Exception:
-        return await fetch_invidious(
-            f"/videos/{v}", force_instance=force_instance, list_type="video"
-        )
+        return await fetch_video_info_invidious_robust(v, force_instance=force_instance)
 
     try:
-      return await fetch_invidious(
-          f"/videos/{v}", force_instance=force_instance, list_type="video"
-      )
+      return await fetch_video_info_invidious_robust(v, force_instance=force_instance)
     except Exception:
       pass
     try:
@@ -602,7 +645,11 @@ async def fetch_sia_stream(v: str):
         video_urls = [s["url"] for s in stream_urls if s.get("url")]
 
       if video_urls:
-        return {"streamUrls": stream_urls, "videoUrls": video_urls}
+        return {
+            "streamUrls": stream_urls,
+            "videoUrls": video_urls,
+            "stream_api_used": "sia",
+        }
   except Exception:
     pass
   raise Exception("Sia failed")
@@ -657,6 +704,7 @@ async def fetch_piped_stream(v: str):
             "descriptionHtml": data.get("description", "").replace("\n", "<br>"),
             "viewCount": data.get("views", 0),
             "likeCount": data.get("likes", 0),
+            "stream_api_used": "piped",
         }
     except Exception:
       continue
@@ -681,6 +729,7 @@ async def fetch_zernio_stream(v: str):
                 "audioUrl": "",
             }],
             "videoUrls": [location],
+            "stream_api_used": "zernio",
         }
   except Exception:
     pass
@@ -716,6 +765,7 @@ async def fetch_rapidapi_stream(v: str):
               "streamUrls": stream_urls,
               "videoUrls": video_urls,
               "title": data.get("title"),
+              "stream_api_used": "rapidapi",
           }
     except Exception:
       continue
@@ -732,10 +782,10 @@ async def fetch_fastest_stream_urls(
       try:
         return await fetch_sia_stream(v)
       except Exception:
-        v_data = await fetch_invidious(
-            f"/videos/{v}", force_instance=force_instance, list_type="video"
-        )
-        return extract_invidious_streams(v_data)
+        v_data = await fetch_video_info_invidious_robust(v, force_instance=force_instance)
+        res = extract_invidious_streams(v_data)
+        res["stream_api_used"] = "invidious"
+        return res
     elif api == "piped":
       return await fetch_piped_stream(v)
     elif api == "rapidapi":
@@ -743,25 +793,24 @@ async def fetch_fastest_stream_urls(
     elif api == "zernio":
       return await fetch_zernio_stream(v)
     elif api == "invidious":
-      v_data = await fetch_invidious(
-          f"/videos/{v}", force_instance=force_instance, list_type="video"
-      )
-      return extract_invidious_streams(v_data)
+      v_data = await fetch_video_info_invidious_robust(v, force_instance=force_instance)
+      res = extract_invidious_streams(v_data)
+      res["stream_api_used"] = "invidious"
+      return res
     elif api == "sennin":
       try:
         return await fetch_sia_stream(v)
       except Exception:
-        v_data = await fetch_invidious(
-            f"/videos/{v}", force_instance=force_instance, list_type="video"
-        )
-        return extract_invidious_streams(v_data)
+        v_data = await fetch_video_info_invidious_robust(v, force_instance=force_instance)
+        res = extract_invidious_streams(v_data)
+        res["stream_api_used"] = "invidious"
+        return res
 
     try:
-      v_data = await fetch_invidious(
-          f"/videos/{v}", force_instance=force_instance, list_type="video"
-      )
+      v_data = await fetch_video_info_invidious_robust(v, force_instance=force_instance)
       inv_streams = extract_invidious_streams(v_data)
       if inv_streams and inv_streams.get("videoUrls"):
+        inv_streams["stream_api_used"] = "invidious"
         return inv_streams
     except Exception:
       pass
@@ -1258,14 +1307,14 @@ async def shorts_player(
           video_data, Exception
       ) else Exception("Failed to load video")
 
-    v_data = video_data if not isinstance(video_data, Exception) else {}
+    v_data = video_data if isinstance(video_data, dict) else {}
+    s_data = stream_data if isinstance(stream_data, dict) else {}
 
     if (
-        stream_data
-        and not isinstance(stream_data, Exception)
-        and stream_data.get("videoUrls")
+        s_data
+        and s_data.get("videoUrls")
     ):
-      video_urls = stream_data.get("videoUrls", [])
+      video_urls = s_data.get("videoUrls", [])
     else:
       invidious_streams = extract_invidious_streams(v_data)
       video_urls = invidious_streams.get("videoUrls", [])
@@ -1280,6 +1329,9 @@ async def shorts_player(
 
     formatted_comments = process_comments(comment_data)
 
+    info_api_used = v_data.get("api_used") or ("invidious" if v_data else "unknown")
+    stream_api_used = s_data.get("stream_api_used") or ("invidious" if video_urls else "unknown")
+
     return templates.TemplateResponse(
         "short.html",
         {
@@ -1292,6 +1344,9 @@ async def shorts_player(
             "like_count": v_likes,
             "description": v_desc,
             "comments": formatted_comments,
+            "info_api_used": info_api_used,
+            "stream_api_used": stream_api_used,
+            "api_used": info_api_used,
         },
     )
   except httpx.TimeoutException:
@@ -1337,6 +1392,8 @@ async def watch(
       invidious_streams = extract_invidious_streams(v_data)
       stream_urls = invidious_streams.get("streamUrls", [])
       video_urls = invidious_streams.get("videoUrls", [])
+      if not s_data.get("stream_api_used"):
+        s_data["stream_api_used"] = "invidious"
 
     recommended = []
     raw_recs = v_data.get("recommendedVideos", [])
@@ -1369,6 +1426,9 @@ async def watch(
 
     formatted_comments = process_comments(comment_data)
 
+    info_api_used = v_data.get("api_used") or ("invidious" if v_data else "unknown")
+    stream_api_used = s_data.get("stream_api_used") or ("invidious" if stream_urls else "unknown")
+
     response = templates.TemplateResponse(
         "watch.html",
         {
@@ -1387,6 +1447,9 @@ async def watch(
             "recommended_videos": recommended,
             "comments": formatted_comments,
             "youtube_url": youtube_url,
+            "info_api_used": info_api_used,
+            "stream_api_used": stream_api_used,
+            "api_used": info_api_used,
         },
     )
 
