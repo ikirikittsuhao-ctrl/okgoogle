@@ -1143,7 +1143,10 @@ async def search(
         url = f"{instance.rstrip('/')}/api/v1/search"
         resp = await client_session.get(url, params=params, timeout=3.5)
         resp.raise_for_status()
-        return resp.json()
+        res_data = resp.json()
+        if _is_valid_invidious_response(res_data):
+          return res_data
+        raise Exception("Invalid Invidious response format")
 
       tasks = [
           asyncio.create_task(fetch_task(inst)) for inst in target_instances
@@ -1155,8 +1158,9 @@ async def search(
       data = None
       for task in done:
         try:
-          data = task.result()
-          if data is not None:
+          res_candidate = task.result()
+          if _is_valid_invidious_response(res_candidate):
+            data = res_candidate
             break
         except:
           continue
