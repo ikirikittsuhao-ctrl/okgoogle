@@ -1067,7 +1067,7 @@ async def search(
     request: Request,
     q: str = Query(...),
     page: int = 1,
-    type: str = "video",
+    type: str = Query("video"),
     force_instance: str = Query(None),
 ):
   try:
@@ -1123,22 +1123,72 @@ async def search(
       if data is None:
         data = await fetch_invidious("/search", params, list_type="search")
 
-    results = [{
-        "type": item.get("type"),
-        "videoId": item.get("videoId"),
-        "playlistId": item.get("playlistId"),
-        "authorId": item.get("authorId"),
-        "title": item.get("title"),
-        "lengthSeconds": item.get("lengthSeconds"),
-        "author": item.get("author"),
-        "authorThumbnails": item.get("authorThumbnails"),
-        "videoThumbnails": item.get("videoThumbnails"),
-        "viewCountText": item.get("viewCountText"),
-        "viewCount": item.get("viewCount"),
-        "publishedText": item.get("publishedText"),
-        "subCountText": item.get("subCountText"),
-        "videoCount": item.get("videoCount"),
-    } for item in data]
+    results_raw = data if isinstance(data, list) else []
+
+    if type == "short":
+      results = [
+          {
+              "type": item.get("type"),
+              "videoId": item.get("videoId"),
+              "title": item.get("title"),
+              "lengthSeconds": item.get("lengthSeconds"),
+              "author": item.get("author"),
+              "authorThumbnails": item.get("authorThumbnails"),
+              "videoThumbnails": item.get("videoThumbnails"),
+              "viewCountText": item.get("viewCountText"),
+              "viewCount": item.get("viewCount"),
+              "publishedText": item.get("publishedText"),
+          }
+          for item in results_raw
+          if item.get("type") == "video" and item.get("videoId")
+      ]
+    elif type == "channel":
+      results = [
+          {
+              "type": item.get("type"),
+              "authorId": item.get("authorId"),
+              "author": item.get("author"),
+              "authorThumbnails": item.get("authorThumbnails"),
+              "subCountText": item.get("subCountText"),
+              "videoCount": item.get("videoCount"),
+          }
+          for item in results_raw
+          if item.get("type") == "channel"
+      ]
+    elif type == "playlist":
+      results = [
+          {
+              "type": item.get("type"),
+              "playlistId": item.get("playlistId"),
+              "title": item.get("title"),
+              "author": item.get("author"),
+              "authorThumbnails": item.get("authorThumbnails"),
+              "videoThumbnails": item.get("videoThumbnails"),
+              "videoCount": item.get("videoCount"),
+          }
+          for item in results_raw
+          if item.get("type") == "playlist"
+      ]
+    else:
+      results = [
+          {
+              "type": item.get("type"),
+              "videoId": item.get("videoId"),
+              "playlistId": item.get("playlistId"),
+              "authorId": item.get("authorId"),
+              "title": item.get("title"),
+              "lengthSeconds": item.get("lengthSeconds"),
+              "author": item.get("author"),
+              "authorThumbnails": item.get("authorThumbnails"),
+              "videoThumbnails": item.get("videoThumbnails"),
+              "viewCountText": item.get("viewCountText"),
+              "viewCount": item.get("viewCount"),
+              "publishedText": item.get("publishedText"),
+              "subCountText": item.get("subCountText"),
+              "videoCount": item.get("videoCount"),
+          }
+          for item in results_raw
+      ]
 
     response = templates.TemplateResponse(
         "search.html",
@@ -1625,8 +1675,8 @@ async def suggest(keyword: str):
                 "client": "firefox",
                 "q": keyword,
                 "hl": "ja",
-                "ie": "utf-8",  # 入力文字コードをUTF-8に指定
-                "oe": "utf-8",  # 出力文字コードをUTF-8に指定（★これが必須）
+                "ie": "utf-8",
+                "oe": "utf-8",
             }
             resp = await client_session.get(url, params=params, timeout=2.0)
             
