@@ -251,12 +251,10 @@ async def fetch_invidious(
 
       tasks = [asyncio.create_task(task(inst)) for inst in target_instances]
 
-      # 完了した順にループし、最初に「成功」したタスクの結果を採用する
       for completed in asyncio.as_completed(tasks):
         try:
           res = await completed
           if _is_valid_invidious_response(res):
-            # 正常に取得できたら残りの未完了タスクをキャンセル
             for t in tasks:
               if not t.done():
                 t.cancel()
@@ -268,7 +266,6 @@ async def fetch_invidious(
         except Exception:
           continue
 
-      # 並列ターゲットで全滅した場合は残りのインスタンスを順次試行
       remaining = [i for i in instances if i not in target_instances]
       last_err = None
       for inst in remaining:
@@ -912,6 +909,47 @@ async def fetch_sia_channel(ucid: str):
   raise Exception("Sia channel failed")
 
 
+async def fetch_invidious_channel(ucid: str, force_instance: str = None, list_type: str = "search"):
+  return await fetch_invidious(
+      f"/channels/{ucid}",
+      force_instance=force_instance,
+      list_type=list_type,
+  )
+
+
+async def fetch_invidious_channel_videos(ucid: str, sort_by: str, force_instance: str = None, list_type: str = "search"):
+  return await fetch_invidious(
+      f"/channels/{ucid}/videos",
+      {"sort_by": sort_by},
+      force_instance=force_instance,
+      list_type=list_type,
+  )
+
+
+async def fetch_invidious_channel_shorts(ucid: str, force_instance: str = None, list_type: str = "search"):
+  return await fetch_invidious(
+      f"/channels/{ucid}/shorts",
+      force_instance=force_instance,
+      list_type=list_type,
+  )
+
+
+async def fetch_invidious_channel_playlists(ucid: str, force_instance: str = None, list_type: str = "search"):
+  return await fetch_invidious(
+      f"/channels/{ucid}/playlists",
+      force_instance=force_instance,
+      list_type=list_type,
+  )
+
+
+async def fetch_invidious_channel_community(ucid: str, force_instance: str = None, list_type: str = "search"):
+  return await fetch_invidious(
+      f"/channels/{ucid}/community",
+      force_instance=force_instance,
+      list_type=list_type,
+  )
+
+
 def extract_invidious_streams(v_data: dict):
   if not v_data:
     return {"streamUrls": [], "videoUrls": []}
@@ -1509,52 +1547,33 @@ async def channel(
     )
 
     async def _do_fetch_channel():
-      if api == "sia" or (not api and not force_instance):
+      sia_attempt = None
+      if api == "sia" or not api:
         try:
           sia_res = await fetch_sia_channel(ucid)
           if sia_res and isinstance(sia_res, dict):
-            return {
+            sia_attempt = {
                 "channel": sia_res,
                 "videos": sia_res.get("videos", []),
                 "shorts": sia_res.get("shorts", []),
                 "playlists": sia_res.get("playlists", []),
                 "community": sia_res.get("community", []),
             }
+            if api == "sia":
+              return sia_attempt
         except Exception:
-          if api == "sia":
-            pass
+          pass
 
       tasks = [
-          fetch_invidious(
-              f"/channels/{ucid}",
-              force_instance=force_instance,
-              list_type="search",
-          ),
-          fetch_invidious(
-              f"/channels/{ucid}/videos",
-              {"sort_by": sort_by},
-              force_instance=force_instance,
-              list_type="search",
-          ),
-          fetch_invidious(
-              f"/channels/{ucid}/shorts",
-              force_instance=force_instance,
-              list_type="search",
-          ),
-          fetch_invidious(
-              f"/channels/{ucid}/playlists",
-              force_instance=force_instance,
-              list_type="search",
-          ),
-          fetch_invidious(
-              f"/channels/{ucid}/community",
-              force_instance=force_instance,
-              list_type="search",
-          ),
+          fetch_invidious_channel(ucid, force_instance=force_instance),
+          fetch_invidious_channel_videos(ucid, sort_by, force_instance=force_instance),
+          fetch_invidious_channel_shorts(ucid, force_instance=force_instance),
+          fetch_invidious_channel_playlists(ucid, force_instance=force_instance),
+          fetch_invidious_channel_community(ucid, force_instance=force_instance),
       ]
 
       results = await asyncio.gather(*tasks, return_exceptions=True)
-      return {
+      invidious_result = {
           "channel": (
               results[0] if not isinstance(results[0], Exception) else {}
           ),
@@ -1567,6 +1586,11 @@ async def channel(
               results[4] if not isinstance(results[4], Exception) else {}
           ),
       }
+
+      if sia_attempt and not invidious_result.get("channel"):
+        return sia_attempt
+
+      return invidious_result
 
     fetched_res = await fetch_with_inflight(
         cache_key, _do_fetch_channel, ttl=180.0
