@@ -4,14 +4,12 @@
 
 {% block extra_css %}
 <style>
-    /* --- YouTube Official Search Results Layout --- */
     .search-results-container {
         max-width: 1096px;
         margin: 0 auto;
         padding: 8px 16px 40px;
     }
 
-    /* --- 絞り込み (Filter Button & Toggle Panel) --- */
     .filter-header-bar {
         display: flex;
         align-items: center;
@@ -42,9 +40,8 @@
         font-size: 20px;
     }
 
-    /* トグルで表示/非表示されるフィルターパネル */
     .filter-panel {
-        display: none; /* 初期状態は非表示（トグル動作） */
+        display: none;
         background-color: var(--yt-sidebar-bg);
         border-bottom: 1px solid var(--yt-border-color);
         padding: 16px 0 24px 0;
@@ -93,7 +90,6 @@
         font-weight: 700;
     }
 
-    /* --- YouTube公式風 検索結果リスト (通常動画) --- */
     .yt-search-list {
         display: flex;
         flex-direction: column;
@@ -113,7 +109,6 @@
         background-color: var(--yt-hover-bg);
     }
 
-    /* 動画サムネイル (左側) */
     .yt-thumb-container {
         position: relative;
         flex: 0 0 360px;
@@ -142,7 +137,6 @@
         letter-spacing: 0.5px;
     }
 
-    /* 動画詳細情報 (右側) */
     .yt-item-details {
         display: flex;
         flex-direction: column;
@@ -185,7 +179,6 @@
         background-color: var(--yt-border-color);
     }
 
-    /* --- チャンネル検索結果の専用レイアウト --- */
     .yt-channel-card {
         display: flex;
         align-items: center;
@@ -206,7 +199,6 @@
         object-fit: cover;
     }
 
-    /* --- Shorts 検索結果 (縦長グリッド) --- */
     .section-header {
         display: flex;
         align-items: center;
@@ -277,7 +269,6 @@
         margin-bottom: 4px;
     }
 
-    /* --- 無限スクロール ローダー & エレメント --- */
     #infinite-loader {
         display: none;
         justify-content: center;
@@ -296,7 +287,6 @@
         to { transform: rotate(360deg); }
     }
 
-    /* カスタムアラート通知 */
     #custom-alert {
         position: fixed;
         bottom: 80px;
@@ -312,7 +302,6 @@
         font-size: 14px;
     }
 
-    /* 全画面ローディングオーバーレイ */
     #loading-overlay {
         position: fixed;
         top: 0; left: 0; width: 100%; height: 100%;
@@ -324,7 +313,44 @@
         z-index: 3000;
     }
 
-    /* レスポンシブ調整 */
+    .yt-playlist-card {
+        display: flex;
+        gap: 16px;
+        text-decoration: none;
+        color: inherit;
+        border-radius: 12px;
+        padding: 4px;
+        transition: background-color 0.15s ease;
+    }
+    .yt-playlist-card:hover {
+        background-color: var(--yt-hover-bg);
+    }
+
+    .yt-playlist-details {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-width: 0;
+        padding-top: 4px;
+    }
+
+    .yt-playlist-title {
+        font-size: 18px;
+        font-weight: 400;
+        line-height: 1.4;
+        margin: 0 0 6px 0;
+        color: var(--yt-text-primary);
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .yt-playlist-meta {
+        font-size: 12px;
+        color: var(--yt-text-secondary);
+    }
+
     @media (max-width: 768px) {
         .yt-thumb-container {
             flex: 0 0 160px;
@@ -345,12 +371,10 @@
 {% endblock %}
 
 {% block content %}
-<!-- 全画面ローディングオーバーレイ -->
 <div id="loading-overlay">
     <div class="yt-spinner"></div>
 </div>
 
-<!-- 通知用カスタムアラート -->
 <div id="custom-alert">
     <div style="display: flex; align-items: center; gap: 10px;">
         <span id="alert-icon" class="material-symbols-outlined" style="color: var(--yt-brand-red);">info</span>
@@ -359,13 +383,11 @@
 </div>
 
 <div class="search-results-container">
-    <!-- 隠しフォーム (フィルタータイプ保持用) -->
     <form id="search-form" action="/search" method="get" style="display:none;">
         <input type="hidden" name="q" value="{{ query }}">
         <input type="hidden" name="type" id="search-type" value="{{ type }}">
     </form>
 
-    <!-- フィルターヘッダー & トグルボタン -->
     <div class="filter-header-bar">
         <button class="filter-toggle-btn" id="filter-toggle-btn" type="button">
             <span class="material-symbols-outlined">tune</span>
@@ -373,7 +395,6 @@
         </button>
     </div>
 
-    <!-- トグル開閉式 絞り込みパネル -->
     <div class="filter-panel" id="filter-panel">
         <div class="filter-group-title">タイプで絞り込み</div>
         <div class="filter-chips">
@@ -384,7 +405,6 @@
         </div>
     </div>
 
-    {# --- Shorts セクション --- #}
     {% if type == 'short' %}
     <div class="section-header">
         <span class="material-symbols-outlined">bolt</span>
@@ -394,7 +414,7 @@
         {% for result in results %}
         <a href="/shorts/{{ result['videoId'] }}" class="video-card is-short">
             <div class="thumbnail-box">
-                <img class="thumbnail" loading="lazy" src="/proxy/thumb?v={{ result['videoId'] }}" onerror="this.src='{{ result['videoThumbnails']['url'] if result['videoThumbnails'] else 'https://i.ytimg.com/vi/' + (result['videoId'] or '') + '/mqdefault.jpg' }}';">
+                <img class="thumbnail" loading="lazy" src="/proxy/thumb?v={{ result['videoId'] }}" onerror="this.src='{{ result['videoThumbnails'][0]['url'] if result['videoThumbnails'] else 'https://i.ytimg.com/vi/' + (result['videoId'] or '') + '/mqdefault.jpg' }}';">
                 <div class="short-badge">
                     <span class="material-symbols-outlined" style="font-size:14px;">bolt</span>
                     SHORTS
@@ -410,48 +430,66 @@
         {% endfor %}
     </div>
 
-    {# --- 通常動画・チャンネル・プレイリスト セクション --- #}
+    {% elif type == 'channel' %}
+    <div class="yt-search-list" id="results-container">
+        {% for result in results %}
+        <a href="/channel/{{ result['authorId'] }}" class="yt-channel-card">
+            <div class="yt-channel-avatar-large">
+                <img src="{{ result['authorThumbnails'][-1]['url'] if result['authorThumbnails'] else '' }}" onerror="this.src='/proxy/thumb?v=default';" alt="icon">
+            </div>
+            <div class="yt-item-details">
+                <div class="yt-item-title" style="font-size: 20px; font-weight: 500;">{{ result['author'] }}</div>
+                <div class="yt-item-meta">
+                    {{ result['subCountText'] }} • {{ result['videoCount'] }} 本の動画
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+
+    {% elif type == 'playlist' %}
+    <div class="yt-search-list" id="results-container">
+        {% for result in results %}
+        <a href="/playlist?list={{ result['playlistId'] }}" class="yt-playlist-card">
+            <div class="yt-thumb-container">
+                <img loading="lazy" src="/proxy/thumb?v={{ result['playlistId'] }}" onerror="this.src='{{ result['videoThumbnails'][0]['url'] if result['videoThumbnails'] else 'https://i.ytimg.com/vi/mqdefault.jpg' }}';">
+                <span class="length-tag">PLAYLIST</span>
+            </div>
+            <div class="yt-playlist-details">
+                <h3 class="yt-playlist-title">{{ result['title'] }}</h3>
+                <div class="yt-playlist-meta">
+                    {{ result['videoCount'] }} 本の動画 • チャンネル: {{ result['author'] }}
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+
     {% else %}
     <div class="yt-search-list" id="results-container">
         {% for result in results %}
-            {% if result['type'] == 'channel' %}
-            <a href="/channel/{{ result['authorId'] }}" class="yt-channel-card">
-                <div class="yt-channel-avatar-large">
-                    <img src="{{ result['authorThumbnails'][-1]['url'] if result['authorThumbnails'] else '' }}" onerror="this.src='/proxy/thumb?v=default';" alt="icon">
+        <a href="/watch?v={{ result['videoId'] }}" class="yt-item-card">
+            <div class="yt-thumb-container">
+                <img loading="lazy" src="/proxy/thumb?v={{ result['videoId'] }}" onerror="this.src='{{ result['videoThumbnails'][0]['url'] if result['videoThumbnails'] else 'https://i.ytimg.com/vi/' + (result['videoId'] or '') + '/mqdefault.jpg' }}';">
+                <span class="length-tag">
+                    {% if result["lengthSeconds"] %}
+                        {{ "%02d:%02d" | format(result["lengthSeconds"] // 60, result["lengthSeconds"] % 60) }}
+                    {% else %}
+                        LIVE
+                    {% endif %}
+                </span>
+            </div>
+            <div class="yt-item-details">
+                <h3 class="yt-item-title">{{ result['title'] }}</h3>
+                <div class="yt-item-meta">
+                    {{ result["viewCountText"] or result["viewCount"] }} • {{ result["publishedText"] }}
                 </div>
-                <div class="yt-item-details">
-                    <div class="yt-item-title" style="font-size: 20px; font-weight: 500;">{{ result['author'] }}</div>
-                    <div class="yt-item-meta">
-                        {{ result['subCountText'] }} • {{ result['videoCount'] }} 本の動画
-                    </div>
+                <div class="yt-channel-author">
+                    <img class="author-icon" src="{{ result['authorThumbnails'][-1]['url'] if result['authorThumbnails'] else '' }}" onerror="this.src='/proxy/thumb?v=default';" alt="author">
+                    <span>{{ result["author"] }}</span>
                 </div>
-            </a>
-            {% else %}
-            <a href="{% if result['type'] == 'playlist' %}/playlist?list={{ result['playlistId'] }}{% else %}/watch?v={{ result['videoId'] }}{% endif %}" class="yt-item-card">
-                <div class="yt-thumb-container">
-                    <img loading="lazy" src="/proxy/thumb?v={{ result['videoId'] or result['playlistId'] }}" onerror="this.src='{{ result['videoThumbnails']['url'] if result['videoThumbnails'] else 'https://i.ytimg.com/vi/' + (result['videoId'] or '') + '/mqdefault.jpg' }}';">
-                    <span class="length-tag">
-                        {% if result["lengthSeconds"] %}
-                            {{ "%02d:%02d" | format(result["lengthSeconds"] // 60, result["lengthSeconds"] % 60) }}
-                        {% elif result["type"] == "playlist" %}
-                            PLAYLIST
-                        {% else %}
-                            LIVE
-                        {% endif %}
-                    </span>
-                </div>
-                <div class="yt-item-details">
-                    <h3 class="yt-item-title">{{ result['title'] }}</h3>
-                    <div class="yt-item-meta">
-                        {{ result["viewCountText"] or result["viewCount"] }} • {{ result["publishedText"] }}
-                    </div>
-                    <div class="yt-channel-author">
-                        <img class="author-icon" src="{{ result['authorThumbnails'][-1]['url'] if result['authorThumbnails'] else '' }}" onerror="this.src='/proxy/thumb?v=default';" alt="author">
-                        <span>{{ result["author"] }}</span>
-                    </div>
-                </div>
-            </a>
-            {% endif %}
+            </div>
+        </a>
         {% endfor %}
     </div>
     {% endif %}
@@ -469,7 +507,6 @@
     </script>
     {% endif %}
 
-    <!-- 無限スクロール用ローダー 兼 判定要素 -->
     <div id="infinite-loader">
         <div class="yt-spinner"></div>
     </div>
@@ -483,12 +520,10 @@
     let hasMore = true;
 
     $(document).ready(function () {
-        // 絞り込み（フィルター）パネルのトグル表示
         $("#filter-toggle-btn").click(function () {
             $("#filter-panel").slideToggle(200);
         });
 
-        // ページ遷移時・フォーム送信時にオーバーレイ表示
         $(document).on('click', 'a', function (e) {
             const href = $(this).attr('href');
             if (href && !href.startsWith('#') && !href.startsWith('javascript') && !$(this).attr('target')) {
@@ -496,7 +531,6 @@
             }
         });
 
-        // 無限スクロールの検知（ウィンドウのスクロール監視）
         $(window).on('scroll', function () {
             if (isLoading || !hasMore) return;
 
@@ -504,21 +538,18 @@
             const windowHeight = $(window).height();
             const documentHeight = $(document).height();
 
-            // ページ最下部付近（残り300px）に達したら自動読み込み
             if (scrollTop + windowHeight >= documentHeight - 300) {
                 loadNextPage();
             }
         });
     });
 
-    // フィルターの適用
     function applyFilter(filterType) {
         $('#loading-overlay').css('display', 'flex');
         document.getElementById('search-type').value = filterType;
         document.getElementById('search-form').submit();
     }
 
-    // 無限スクロール処理 (次ページ追加読み込み)
     function loadNextPage() {
         isLoading = true;
         $("#infinite-loader").css("display", "flex");
@@ -540,7 +571,7 @@
                     $('#results-container').append(newItems);
                     currentPage = nextPage;
                 } else {
-                    hasMore = false; // これ以上のデータが存在しない
+                    hasMore = false;
                 }
             },
             error: function () {
@@ -554,7 +585,6 @@
         });
     }
 
-    // 通知ポップアップ表示処理
     function showNotify(msg, isError = false) {
         const alertBox = document.getElementById("custom-alert");
         const alertIcon = document.getElementById("alert-icon");
