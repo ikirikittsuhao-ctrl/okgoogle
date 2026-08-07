@@ -1,606 +1,376 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 
-{% block title %}「{{ query }}」の検索結果 - 仙人Tube+{% endblock %}
+{% block title %}再生履歴 - 仙人Tube+{% endblock %}
 
 {% block extra_css %}
 <style>
-    .search-results-container {
-        max-width: 1096px;
+    /* --- YouTube Official Feed/History Page UI --- */
+    .history-container {
+        max-width: 1280px;
         margin: 0 auto;
-        padding: 8px 16px 40px;
+        padding: 16px 24px;
     }
 
-    .filter-header-bar {
+    /* ページヘッダー */
+    .history-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        border-bottom: 1px solid var(--yt-border-color);
-        padding-bottom: 8px;
-        margin-bottom: 16px;
+        padding-bottom: 16px;
+        margin-bottom: 20px;
+        border-bottom: 1px solid var(--yt-border-color, #e5e5e5);
     }
 
-    .filter-toggle-btn {
+    .history-header-title {
+        font-size: 24px;
+        font-weight: 700;
+        margin: 0;
+        color: var(--yt-text-primary, #0f0f0f);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .history-header-title i {
+        color: var(--yt-text-primary, #0f0f0f);
+        font-size: 22px;
+    }
+
+    /* 一括削除ボタン */
+    .clear-btn {
+        background-color: transparent;
+        color: var(--yt-text-primary, #0f0f0f);
+        border: 1px solid var(--yt-border-color, #ccc);
+        padding: 8px 16px;
+        border-radius: 18px;
+        cursor: pointer;
+        text-decoration: none;
+        font-weight: 500;
+        font-size: 14px;
         display: inline-flex;
         align-items: center;
         gap: 8px;
-        background: none;
-        border: none;
-        color: var(--yt-text-primary);
-        font-size: 14px;
-        font-weight: 500;
-        cursor: pointer;
-        padding: 6px 12px;
-        border-radius: 18px;
-        transition: background-color 0.2s;
-    }
-    .filter-toggle-btn:hover {
-        background-color: var(--yt-hover-bg);
-    }
-    .filter-toggle-btn .material-symbols-outlined {
-        font-size: 20px;
+        transition: background-color 0.2s, border-color 0.2s;
     }
 
-    .filter-panel {
-        display: none;
-        background-color: var(--yt-sidebar-bg);
-        border-bottom: 1px solid var(--yt-border-color);
-        padding: 16px 0 24px 0;
-        margin-bottom: 20px;
-        animation: fadeIn 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+    .clear-btn:hover {
+        background-color: var(--yt-hover-bg, rgba(0, 0, 0, 0.05));
+        border-color: transparent;
     }
 
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(-8px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-
-    .filter-group-title {
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--yt-text-secondary);
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        margin-bottom: 12px;
-    }
-
-    .filter-chips {
+    /* 検索フィルタータブ */
+    .filter-container {
         display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 24px;
+        overflow-x: auto;
+        padding-bottom: 8px;
+        scrollbar-width: thin;
     }
 
     .filter-chip {
-        padding: 8px 16px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px 12px;
         border-radius: 8px;
-        background: var(--yt-chip-bg);
-        border: 1px solid transparent;
-        color: var(--yt-text-primary);
+        background-color: var(--yt-hover-bg, rgba(0, 0, 0, 0.05));
+        color: var(--yt-text-primary, #0f0f0f);
+        text-decoration: none;
         font-size: 14px;
         font-weight: 500;
-        cursor: pointer;
         white-space: nowrap;
-        transition: all 0.2s ease;
+        transition: background-color 0.2s, color 0.2s;
     }
+
     .filter-chip:hover {
-        background: var(--yt-hover-bg);
+        background-color: var(--yt-border-color, #ccc);
     }
+
     .filter-chip.active {
-        background: var(--yt-chip-active-bg);
-        color: var(--yt-chip-active-text);
-        font-weight: 700;
+        background-color: var(--yt-chip-active-bg, #0f0f0f);
+        color: var(--yt-chip-active-text, #ffffff);
     }
 
-    .yt-search-list {
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-    }
-
-    .yt-item-card {
-        display: flex;
-        gap: 16px;
-        text-decoration: none;
-        color: inherit;
-        border-radius: 12px;
-        padding: 4px;
-        transition: background-color 0.15s ease;
-    }
-    .yt-item-card:hover {
-        background-color: var(--yt-hover-bg);
-    }
-
-    .yt-thumb-container {
-        position: relative;
-        flex: 0 0 360px;
-        max-width: 360px;
-        aspect-ratio: 16 / 9;
-        border-radius: 12px;
-        overflow: hidden;
-        background-color: #000;
-    }
-    .yt-thumb-container img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    .length-tag {
-        position: absolute;
-        bottom: 8px;
-        right: 8px;
-        background: rgba(0, 0, 0, 0.8);
-        color: #fff;
-        padding: 3px 6px;
-        border-radius: 4px;
-        font-size: 12px;
-        font-weight: 500;
-        letter-spacing: 0.5px;
-    }
-
-    .yt-item-details {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        min-width: 0;
-        padding-top: 4px;
-    }
-
-    .yt-item-title {
-        font-size: 18px;
-        font-weight: 400;
-        line-height: 1.4;
-        margin: 0 0 6px 0;
-        color: var(--yt-text-primary);
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-    }
-
-    .yt-item-meta {
-        font-size: 12px;
-        color: var(--yt-text-secondary);
-        margin-bottom: 12px;
-    }
-
-    .yt-channel-author {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 12px;
-        font-size: 13px;
-        color: var(--yt-text-secondary);
-    }
-    .yt-channel-author .author-icon {
-        width: 24px;
-        height: 24px;
-        border-radius: 50%;
-        object-fit: cover;
-        background-color: var(--yt-border-color);
-    }
-
-    .yt-channel-card {
-        display: flex;
-        align-items: center;
-        padding: 16px 0;
-        border-bottom: 1px solid var(--yt-border-color);
-        text-decoration: none;
-        color: inherit;
-    }
-    .yt-channel-avatar-large {
-        flex: 0 0 360px;
-        display: flex;
-        justify-content: center;
-    }
-    .yt-channel-avatar-large img {
-        width: 136px;
-        height: 136px;
-        border-radius: 50%;
-        object-fit: cover;
-    }
-
-    .section-header {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin: 24px 0 16px;
-        font-size: 20px;
-        font-weight: 700;
-    }
-    .section-header .material-symbols-outlined {
-        color: var(--yt-brand-red);
-    }
-
-    .shorts-grid {
+    /* レスポンシブグリッドレイアウト */
+    .video-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 16px;
-        margin-bottom: 32px;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 20px 16px;
+        width: 100%;
     }
 
-    .video-card.is-short {
+    /* 動画カードのベーススタイルと基本アニメーション */
+    .video-card {
         display: flex;
         flex-direction: column;
         text-decoration: none;
-        color: inherit;
+        color: var(--yt-text-primary, #0f0f0f);
         border-radius: 12px;
         overflow: hidden;
-        transition: transform 0.2s;
+        transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1), 
+                    box-shadow 0.25s cubic-bezier(0.2, 0, 0, 1);
+        /* 初期読み込み時のフェードインアニメーション */
+        animation: fadeInCard 0.4s ease-out forwards;
+        will-change: transform;
     }
-    .video-card.is-short:hover {
+
+    /* ホバー時のホバー＆浮き上がり効果 */
+    .video-card:hover {
         transform: translateY(-4px);
     }
 
-    .video-card.is-short .thumbnail-box {
+    /* サムネイル容器（16:9 アスペクト比固定） */
+    .video-thumbnail {
         position: relative;
         width: 100%;
-        aspect-ratio: 9 / 16;
-        background-color: #000;
+        padding-top: 56.25%; /* 16:9 Aspect Ratio */
+        background-color: var(--yt-chip-bg, #e5e5e5);
         border-radius: 12px;
         overflow: hidden;
     }
 
-    .short-badge {
+    .video-thumbnail img {
         position: absolute;
-        top: 8px;
-        left: 8px;
-        background: var(--yt-brand-red);
-        color: #fff;
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 11px;
-        font-weight: 700;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    /* ホバー時のサムネイル微拡大（ズームイン効果） */
+    .video-card:hover .video-thumbnail img {
+        transform: scale(1.05);
+    }
+
+    /* 動画情報のレイアウト */
+    .video-info {
         display: flex;
-        align-items: center;
-        gap: 2px;
+        padding: 12px 0 0 0;
+        gap: 12px;
     }
 
-    .video-card.is-short .video-info {
-        padding: 8px 4px;
-    }
-    .video-card.is-short .video-title {
-        font-size: 14px;
-        font-weight: 500;
-        line-height: 1.3;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        margin-bottom: 4px;
-    }
-
-    #infinite-loader {
-        display: none;
-        justify-content: center;
-        align-items: center;
-        padding: 32px 0;
-    }
-    .yt-spinner {
-        width: 36px;
-        height: 36px;
-        border: 3px solid var(--yt-border-color);
-        border-top-color: var(--yt-text-primary);
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-    }
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-
-    #custom-alert {
-        position: fixed;
-        bottom: 80px;
-        right: 24px;
-        background: var(--yt-search-bg);
-        color: var(--yt-text-primary);
-        border-left: 4px solid var(--yt-brand-red);
-        padding: 12px 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-        z-index: 2000;
-        display: none;
-        font-size: 14px;
-    }
-
-    #loading-overlay {
-        position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0, 0, 0, 0.4);
-        backdrop-filter: blur(4px);
-        display: none;
-        justify-content: center;
-        align-items: center;
-        z-index: 3000;
-    }
-
-    .yt-playlist-card {
-        display: flex;
-        gap: 16px;
-        text-decoration: none;
-        color: inherit;
-        border-radius: 12px;
-        padding: 4px;
-        transition: background-color 0.15s ease;
-    }
-    .yt-playlist-card:hover {
-        background-color: var(--yt-hover-bg);
-    }
-
-    .yt-playlist-details {
+    .video-details {
         display: flex;
         flex-direction: column;
         flex: 1;
-        min-width: 0;
-        padding-top: 4px;
+        min-width: 0; /* テキスト溢れ防止 */
     }
 
-    .yt-playlist-title {
-        font-size: 18px;
-        font-weight: 400;
+    /* タイトル（2行で省略表示） */
+    .video-title {
+        font-size: 15px;
+        font-weight: 500;
         line-height: 1.4;
-        margin: 0 0 6px 0;
-        color: var(--yt-text-primary);
+        margin-bottom: 6px;
+        color: var(--yt-text-primary, #0f0f0f);
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
+        text-overflow: ellipsis;
+        transition: color 0.2s ease;
     }
 
-    .yt-playlist-meta {
+    .video-card:hover .video-title {
+        color: #3ea6ff; /* ホバー時にうっすら青く発色 */
+    }
+
+    /* 投稿者とメタ情報 */
+    .video-author,
+    .video-meta {
+        font-size: 13px;
+        color: var(--yt-text-secondary, #606060);
+        line-height: 1.3;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .video-author {
+        margin-bottom: 2px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .video-author:hover {
+        color: var(--yt-text-primary, #0f0f0f);
+    }
+
+    .video-meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         font-size: 12px;
-        color: var(--yt-text-secondary);
     }
 
-    @media (max-width: 768px) {
-        .yt-thumb-container {
-            flex: 0 0 160px;
-            max-width: 160px;
+    /* カード登場用のキーフレーム */
+    @keyframes fadeInCard {
+        from {
+            opacity: 0;
+            transform: translateY(12px);
         }
-        .yt-item-title {
-            font-size: 14px;
+        to {
+            opacity: 1;
+            transform: translateY(0);
         }
-        .yt-channel-avatar-large {
-            flex: 0 0 100px;
+    }
+
+    /* 空の状態 (Empty State) */
+    .empty-msg {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 80px 20px;
+        text-align: center;
+    }
+
+    .empty-icon-circle {
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        background-color: var(--yt-hover-bg, rgba(0, 0, 0, 0.05));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 24px;
+    }
+
+    .empty-icon-circle i {
+        font-size: 48px;
+        color: var(--yt-text-secondary, #606060);
+    }
+
+    .empty-msg p {
+        font-size: 16px;
+        color: var(--yt-text-secondary, #606060);
+        margin: 0 0 24px 0;
+    }
+
+    .btn-explore {
+        background-color: var(--yt-chip-active-bg, #0f0f0f);
+        color: var(--yt-chip-active-text, #ffffff);
+        padding: 10px 20px;
+        border-radius: 20px;
+        text-decoration: none;
+        font-size: 14px;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        transition: opacity 0.2s;
+    }
+
+    .btn-explore:hover {
+        opacity: 0.9;
+    }
+
+    /* モバイル・画面幅縮小時の調整 */
+    @media (max-width: 600px) {
+        .video-grid {
+            grid-template-columns: 1fr;
+            gap: 16px;
         }
-        .yt-channel-avatar-large img {
-            width: 80px;
-            height: 80px;
+
+        .video-thumbnail {
+            border-radius: 0; /* スマホ全幅表示時に角丸を解除（YouTube公式風） */
+        }
+        
+        .video-card {
+            border-radius: 0;
+        }
+
+        .video-info {
+            padding: 10px 12px 0 12px;
         }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div id="loading-overlay">
-    <div class="yt-spinner"></div>
-</div>
-
-<div id="custom-alert">
-    <div style="display: flex; align-items: center; gap: 10px;">
-        <span id="alert-icon" class="material-symbols-outlined" style="color: var(--yt-brand-red);">info</span>
-        <span id="alert-text"></span>
-    </div>
-</div>
-
-<div class="search-results-container">
-    <form id="search-form" action="/search" method="get" style="display:none;">
-        <input type="hidden" name="q" value="{{ query }}">
-        <input type="hidden" name="type" id="search-type" value="{{ type }}">
-    </form>
-
-    <div class="filter-header-bar">
-        <button class="filter-toggle-btn" id="filter-toggle-btn" type="button">
-            <span class="material-symbols-outlined">tune</span>
-            <span>絞り込み</span>
-        </button>
+<div class="history-container">
+    <div class="history-header">
+        <h1 class="history-header-title">
+            <i class="fas fa-history"></i>
+            再生履歴
+        </h1>
+        {% if history %}
+        <a href="/history/clear" class="clear-btn" onclick="return confirm('再生履歴をすべて削除しますか？')">
+            <i class="fas fa-trash-alt"></i>
+            すべての再生履歴を消去
+        </a>
+        {% endif %}
     </div>
 
-    <div class="filter-panel" id="filter-panel">
-        <div class="filter-group-title">タイプで絞り込み</div>
-        <div class="filter-chips">
-            <div class="filter-chip {% if type == 'video' or not type %}active{% endif %}" onclick="applyFilter('video')">動画</div>
-            <div class="filter-chip {% if type == 'channel' %}active{% endif %}" onclick="applyFilter('channel')">チャンネル</div>
-            <div class="filter-chip {% if type == 'playlist' %}active{% endif %}" onclick="applyFilter('playlist')">プレイリスト</div>
-            <div class="filter-chip {% if type == 'short' %}active{% endif %}" onclick="applyFilter('short')">Shorts</div>
-        </div>
+    <!-- 検索フィルター (qパラメータが存在する場合または切り替え用) -->
+    <div class="filter-container">
+        <a href="/search?q={{ query|default('') }}" class="filter-chip {% if not current_type or current_type == '' %}active{% endif %}">
+            すべて
+        </a>
+        <a href="/search?q={{ query|default('') }}&type=short" class="filter-chip {% if current_type == 'short' %}active{% endif %}">
+            ショート
+        </a>
+        <a href="/search?q={{ query|default('') }}&type=channel" class="filter-chip {% if current_type == 'channel' %}active{% endif %}">
+            チャンネル
+        </a>
+        <a href="/search?q={{ query|default('') }}&type=playlist" class="filter-chip {% if current_type == 'playlist' %}active{% endif %}">
+            再生リスト
+        </a>
     </div>
 
-    {% if type == 'short' %}
-    <div class="section-header">
-        <span class="material-symbols-outlined">bolt</span>
-        <span>Shorts</span>
-    </div>
-    <div class="shorts-grid" id="results-container">
-        {% for result in results %}
-        <a href="/shorts/{{ result['videoId'] }}" class="video-card is-short">
-            <div class="thumbnail-box">
-                <img class="thumbnail" loading="lazy" src="/proxy/thumb?v={{ result['videoId'] }}" onerror="this.src='{{ result['videoThumbnails'][0]['url'] if result['videoThumbnails'] else 'https://i.ytimg.com/vi/' + (result['videoId'] or '') + '/mqdefault.jpg' }}';">
-                <div class="short-badge">
-                    <span class="material-symbols-outlined" style="font-size:14px;">bolt</span>
-                    SHORTS
-                </div>
+    <div class="video-grid">
+        {% for item in history %}
+        <a href="/watch?v={{ item.videoId }}" class="video-card">
+            <div class="video-thumbnail">
+                <img src="/thumbnail?v={{ item.videoId }}" alt="{{ item.title }}">
             </div>
             <div class="video-info">
-                <div class="video-title">{{ result['title'] }}</div>
-                <div class="video-meta" style="font-size: 12px; color: var(--yt-text-secondary);">
-                    {{ result["viewCountText"] or result["viewCount"] }}
+                <div class="video-details">
+                    <div class="video-title">{{ item.title }}</div>
+                    <div class="video-author">
+                        <i class="fas fa-user-circle"></i>
+                        <span>{{ item.author }}</span>
+                    </div>
+                    <div class="video-meta">
+                        <i class="far fa-clock"></i>
+                        <span>{{ item.added_at }}</span>
+                    </div>
                 </div>
             </div>
         </a>
         {% endfor %}
-    </div>
 
-    {% elif type == 'channel' %}
-    <div class="yt-search-list" id="results-container">
-        {% for result in results %}
-        <a href="/channel/{{ result['authorId'] }}" class="yt-channel-card">
-            <div class="yt-channel-avatar-large">
-                <img src="{{ result['authorThumbnails'][-1]['url'] if result['authorThumbnails'] else '' }}" onerror="this.src='/proxy/thumb?v=default';" alt="icon">
+        {% if not history %}
+        <div class="empty-msg">
+            <div class="empty-icon-circle">
+                <i class="fas fa-history"></i>
             </div>
-            <div class="yt-item-details">
-                <div class="yt-item-title" style="font-size: 20px; font-weight: 500;">{{ result['author'] }}</div>
-                <div class="yt-item-meta">
-                    {{ result['subCountText'] }} • {{ result['videoCount'] }} 本の動画
-                </div>
-            </div>
-        </a>
-        {% endfor %}
-    </div>
-
-    {% elif type == 'playlist' %}
-    <div class="yt-search-list" id="results-container">
-        {% for result in results %}
-        <a href="/playlist?list={{ result['playlistId'] }}" class="yt-playlist-card">
-            <div class="yt-thumb-container">
-                <img loading="lazy" src="/proxy/thumb?v={{ result['playlistId'] }}" onerror="this.src='{{ result['videoThumbnails'][0]['url'] if result['videoThumbnails'] else 'https://i.ytimg.com/vi/mqdefault.jpg' }}';">
-                <span class="length-tag">PLAYLIST</span>
-            </div>
-            <div class="yt-playlist-details">
-                <h3 class="yt-playlist-title">{{ result['title'] }}</h3>
-                <div class="yt-playlist-meta">
-                    {{ result['videoCount'] }} 本の動画 • チャンネル: {{ result['author'] }}
-                </div>
-            </div>
-        </a>
-        {% endfor %}
-    </div>
-
-    {% else %}
-    <div class="yt-search-list" id="results-container">
-        {% for result in results %}
-        <a href="/watch?v={{ result['videoId'] }}" class="yt-item-card">
-            <div class="yt-thumb-container">
-                <img loading="lazy" src="/proxy/thumb?v={{ result['videoId'] }}" onerror="this.src='{{ result['videoThumbnails'][0]['url'] if result['videoThumbnails'] else 'https://i.ytimg.com/vi/' + (result['videoId'] or '') + '/mqdefault.jpg' }}';">
-                <span class="length-tag">
-                    {% if result["lengthSeconds"] %}
-                        {{ "%02d:%02d" | format(result["lengthSeconds"] // 60, result["lengthSeconds"] % 60) }}
-                    {% else %}
-                        LIVE
-                    {% endif %}
-                </span>
-            </div>
-            <div class="yt-item-details">
-                <h3 class="yt-item-title">{{ result['title'] }}</h3>
-                <div class="yt-item-meta">
-                    {{ result["viewCountText"] or result["viewCount"] }} • {{ result["publishedText"] }}
-                </div>
-                <div class="yt-channel-author">
-                    <img class="author-icon" src="{{ result['authorThumbnails'][-1]['url'] if result['authorThumbnails'] else '' }}" onerror="this.src='/proxy/thumb?v=default';" alt="author">
-                    <span>{{ result["author"] }}</span>
-                </div>
-            </div>
-        </a>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    {% if not results %}
-    <div style="text-align: center; margin-top: 80px; color: var(--yt-text-secondary);">
-        <span class="material-symbols-outlined" style="font-size: 48px; margin-bottom: 12px;">search_off</span>
-        <p style="font-size: 16px;">見つかりませんでした。</p>
-        <p style="font-size: 12px; opacity: 0.7;">(APIレスポンスが空、またはインスタンスエラーです)</p>
-    </div>
-    <script>
-        window.onload = function() {
-            showNotify("データの取得に失敗しました。インスタンスを切り替えるか、再試行してください。", true);
-        };
-    </script>
-    {% endif %}
-
-    <div id="infinite-loader">
-        <div class="yt-spinner"></div>
+            <p>再生履歴はありません</p>
+            <a href="/" class="btn-explore">
+                <i class="fas fa-search"></i>
+                動画を探しに行く
+            </a>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    let currentPage = {{ page if page else 1 }};
-    let isLoading = false;
-    let hasMore = true;
-
-    $(document).ready(function () {
-        $("#filter-toggle-btn").click(function () {
-            $("#filter-panel").slideToggle(200);
-        });
-
-        $(document).on('click', 'a', function (e) {
-            const href = $(this).attr('href');
-            if (href && !href.startsWith('#') && !href.startsWith('javascript') && !$(this).attr('target')) {
-                $('#loading-overlay').css('display', 'flex');
-            }
-        });
-
-        $(window).on('scroll', function () {
-            if (isLoading || !hasMore) return;
-
-            const scrollTop = $(window).scrollTop();
-            const windowHeight = $(window).height();
-            const documentHeight = $(document).height();
-
-            if (scrollTop + windowHeight >= documentHeight - 300) {
-                loadNextPage();
-            }
-        });
-    });
-
-    function applyFilter(filterType) {
-        $('#loading-overlay').css('display', 'flex');
-        document.getElementById('search-type').value = filterType;
-        document.getElementById('search-form').submit();
-    }
-
-    function loadNextPage() {
-        isLoading = true;
-        $("#infinite-loader").css("display", "flex");
-
-        const nextPage = currentPage + 1;
-        const query = encodeURIComponent("{{ query }}");
-        const type = "{{ type }}";
-
-        const url = `/search?q=${query}&type=${type}&page=${nextPage}`;
-
-        $.ajax({
-            url: url,
-            type: 'GET',
-            dataType: 'html',
-            success: function (response) {
-                const newItems = $(response).find('#results-container').html();
-                
-                if (newItems && $.trim(newItems).length > 0) {
-                    $('#results-container').append(newItems);
-                    currentPage = nextPage;
-                } else {
-                    hasMore = false;
-                }
-            },
-            error: function () {
-                hasMore = false;
-                showNotify("追加データの読み込みに失敗しました。", true);
-            },
-            complete: function () {
-                isLoading = false;
-                $("#infinite-loader").hide();
-            }
-        });
-    }
-
-    function showNotify(msg, isError = false) {
-        const alertBox = document.getElementById("custom-alert");
-        const alertIcon = document.getElementById("alert-icon");
-        const alertText = document.getElementById("alert-text");
-
-        alertText.innerText = msg;
-
-        if (isError) {
-            alertIcon.innerText = "warning";
-            alertIcon.style.color = "var(--yt-brand-red)";
-        } else {
-            alertIcon.innerText = "info";
-            alertIcon.style.color = "var(--yt-text-primary)";
+    document.addEventListener('DOMContentLoaded', function() {
+        // サイドバーのアクティブ化（サイドバーが存在する場合）
+        const sidebarHistory = document.querySelector('#yt-sidebar a[href="/history"]');
+        if (sidebarHistory) {
+            document.querySelectorAll('#yt-sidebar .nav-item').forEach(el => el.classList.remove('active'));
+            sidebarHistory.classList.add('active');
         }
-
-        $(alertBox).stop(true, true).fadeIn(300).delay(3000).fadeOut(500);
-    }
+    });
 </script>
 {% endblock %}
