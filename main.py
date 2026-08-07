@@ -1,6 +1,6 @@
 import asyncio
 from fastapi import FastAPI, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import json
@@ -22,8 +22,8 @@ app.include_router(video_router)
 app.include_router(stream_router)
 app.include_router(channel_router)
 
-@app.get("/", response_class=HTMLResponse)
-async def index(request: Request):
+@app.get("/api/recommended")
+async def get_recommended_api(request: Request):
   try:
     search_history_json = request.cookies.get("search_history", "[]")
     search_history = json.loads(search_history_json)
@@ -35,20 +35,6 @@ async def index(request: Request):
       if search_history
       else ["ボカロ", "VTuber", "ゲーム実況", "音楽", "ニュース"]
   )
-
-  async def fetch_trending_results():
-    try:
-      from app.search import fetch_invidious
-      res = await fetch_invidious("/trending", {"region": "JP"}, list_type="trending")
-      if isinstance(res, list):
-        return [
-            item
-            for item in res
-            if item.get("type") in ["video", None] and item.get("videoId")
-        ]
-    except:
-      pass
-    return []
 
   async def fetch_keyword_results(kw):
     try:
@@ -66,7 +52,7 @@ async def index(request: Request):
       pass
     return []
 
-  tasks = [fetch_trending_results()] + [fetch_keyword_results(kw) for kw in recent_keywords]
+  tasks = [fetch_keyword_results(kw) for kw in recent_keywords]
   results_list = await asyncio.gather(*tasks)
 
   recommended_videos = []
@@ -81,9 +67,13 @@ async def index(request: Request):
   random.shuffle(recommended_videos)
   recommended_videos = recommended_videos[:24]
 
+  return JSONResponse(content=recommended_videos)
+
+@app.get("/", response_class=HTMLResponse)
+async def index(request: Request):
   return templates.TemplateResponse(
       "home.html",
-      {"request": request, "recommended_videos": recommended_videos},
+      {"request": request},
   )
 
 
