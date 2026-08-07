@@ -153,23 +153,53 @@
 
 {% block content %}
 <h2 class="section-title">おすすめ</h2>
-<div class="video-grid">
-    {% for video in recommended_videos %}
-    <a href="/watch?v={{ video.videoId }}" class="video-card" style="animation-delay: {{ loop.index0 * 0.05 }}s;">
-        <div class="video-thumbnail">
-            <img src="/thumbnail?v={{ video.videoId }}" alt="{{ video.title }}" loading="lazy">
-        </div>
-        <div class="video-info">
-            <div class="video-details">
-                <div class="video-title">{{ video.title }}</div>
-                <div class="video-author">{{ video.author }}</div>
-                <div class="video-meta">
-                    {% if video.viewCountText %}{{ video.viewCountText }}{% elif video.viewCount %}{{ video.viewCount }} 回視聴{% endif %}
-                    {% if video.publishedText %} • {{ video.publishedText }}{% endif %}
-                </div>
-            </div>
-        </div>
-    </a>
-    {% endfor %}
+<div class="video-grid" id="video-grid">
 </div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    fetch("/api/recommended")
+        .then(response => response.json())
+        .then(videos => {
+            const grid = document.getElementById("video-grid");
+            videos.forEach((video, index) => {
+                const card = document.createElement("a");
+                card.href = `/watch?v=${video.videoId}`;
+                card.className = "video-card";
+                card.style.animationDelay = `${index * 0.05}s`;
+
+                let metaText = "";
+                if (video.viewCountText) {
+                    metaText += video.viewCountText;
+                } else if (video.viewCount) {
+                    metaText += `${video.viewCount} 回視聴`;
+                }
+                if (video.publishedText) {
+                    if (metaText) metaText += " • ";
+                    metaText += video.publishedText;
+                }
+
+                card.innerHTML = `
+                    <div class="video-thumbnail">
+                        <img src="/thumbnail?v=${video.videoId}" alt="${video.title}" loading="lazy">
+                    </div>
+                    <div class="video-info">
+                        <div class="video-details">
+                            <div class="video-title"></div>
+                            <div class="video-author"></div>
+                            <div class="video-meta"></div>
+                        </div>
+                    </div>
+                `;
+
+                card.querySelector(".video-title").textContent = video.title || "";
+                card.querySelector(".video-author").textContent = video.author || "";
+                card.querySelector(".video-meta").textContent = metaText;
+
+                grid.appendChild(card);
+            });
+        })
+        .catch(err => console.error("Failed to load recommended videos:", err));
+});
+</script>
 {% endblock %}
