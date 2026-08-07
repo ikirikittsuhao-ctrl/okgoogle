@@ -1,478 +1,498 @@
 {% extends "base.html" %}
 
-{% block title %}{{ author }} - 仙人Tube{% endblock %}
+{% block title %}{{ author if author else "チャンネル" }} - 仙人Tube{% endblock %}
 
 {% block extra_css %}
 <style>
-    /* --- YouTube Official Channel Header & Theme Overrides --- */
-    :root {
-        --yt-btn-sub-bg: #f1f1f1;
-        --yt-btn-sub-text: #0f0f0f;
-        --yt-btn-subscribed-bg: #272727;
-        --yt-btn-subscribed-text: #f1f1f1;
-    }
-
-    @media (prefers-color-scheme: light) {
-        :root {
-            --yt-btn-sub-bg: #0f0f0f;
-            --yt-btn-sub-text: #ffffff;
-            --yt-btn-subscribed-bg: rgba(0, 0, 0, 0.05);
-            --yt-btn-subscribed-text: #0f0f0f;
-        }
-    }
-
-    /* チャンネルヘッダー */
+    /* --- Channel Header --- */
     .channel-header {
-        max-width: 1284px;
-        margin: 0 auto;
-        padding: 16px 24px;
-        display: flex;
-        align-items: flex-start;
-        gap: 24px;
-    }
-
-    .channel-icon {
-        width: 128px;
-        height: 128px;
-        border-radius: 50%;
-        object-fit: cover;
-        flex-shrink: 0;
-    }
-
-    .channel-meta {
-        flex: 1;
         display: flex;
         flex-direction: column;
-        justify-content: center;
-    }
-
-    .channel-meta h1 {
-        margin: 0 0 4px 0;
-        font-size: 36px;
-        font-weight: 700;
-        color: var(--yt-text-primary);
-        line-height: 1.2;
-    }
-
-    .sub-count {
-        color: var(--yt-text-secondary);
-        font-size: 14px;
-        margin-bottom: 8px;
-    }
-
-    /* 概要欄のスタイル */
-    .desc-container {
-        font-size: 14px;
-        color: var(--yt-text-secondary);
-        max-width: 720px;
-        margin-top: 4px;
-        line-height: 1.4;
-    }
-
-    .desc-content {
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        word-break: break-word;
-    }
-
-    .desc-content.expanded {
-        display: block;
-        -webkit-line-clamp: initial;
-    }
-
-    .desc-toggle {
-        background: none;
-        border: none;
-        color: var(--yt-text-primary);
-        cursor: pointer;
-        padding: 0;
-        font-weight: 500;
-        font-size: 14px;
-        margin-top: 4px;
-    }
-
-    .desc-toggle:hover {
-        text-decoration: underline;
-    }
-
-    /* チャンネル登録ボタン (YouTube 公式 Pill スタイル) */
-    .sub-btn {
-        background-color: var(--yt-btn-sub-bg);
-        color: var(--yt-btn-sub-text);
-        border: none;
-        height: 36px;
-        padding: 0 16px;
-        border-radius: 18px;
-        font-weight: 500;
-        font-size: 14px;
-        cursor: pointer;
-        margin-top: 12px;
-        align-self: flex-start;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        transition: background-color 0.2s, opacity 0.2s;
-    }
-
-    .sub-btn:hover {
-        opacity: 0.9;
-    }
-
-    .sub-btn.subscribed {
-        background-color: var(--yt-btn-subscribed-bg);
-        color: var(--yt-btn-subscribed-text);
-    }
-
-    .sub-btn.subscribed:hover {
-        background-color: var(--yt-hover-bg);
-    }
-
-    /* チャンネルタブ ナビゲーション */
-    .channel-nav-wrapper {
+        gap: 16px;
+        padding-bottom: 16px;
         border-bottom: 1px solid var(--yt-border-color);
         margin-bottom: 16px;
     }
 
-    .channel-nav {
-        max-width: 1284px;
-        margin: 0 auto;
-        padding: 0 24px;
+    .channel-info-main {
         display: flex;
+        align-items: center;
         gap: 24px;
-        overflow-x: auto;
     }
 
-    .nav-item {
-        padding: 12px 0;
-        cursor: pointer;
-        font-weight: 500;
-        font-size: 16px;
-        border-bottom: 2px solid transparent;
-        text-decoration: none;
+    .channel-avatar {
+        width: 128px;
+        height: 128px;
+        border-radius: 50%;
+        object-fit: cover;
+        background-color: var(--yt-hover-bg);
+        flex-shrink: 0;
+    }
+
+    .channel-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .channel-title {
+        font-size: 28px;
+        font-weight: 700;
+        margin: 0;
+        color: var(--yt-text-primary);
+        line-height: 1.2;
+    }
+
+    .channel-sub-info {
+        font-size: 14px;
         color: var(--yt-text-secondary);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    /* --- Tabs & Sort --- */
+    .channel-nav-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--yt-border-color);
+        margin-bottom: 24px;
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .channel-tabs {
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
         white-space: nowrap;
+        scrollbar-width: none; /* Firefox */
+    }
+    .channel-tabs::-webkit-scrollbar { display: none; } /* Chrome/Safari */
+
+    .tab-btn {
+        padding: 12px 16px;
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--yt-text-secondary);
+        text-decoration: none;
+        border-bottom: 2px solid transparent;
         transition: color 0.2s, border-color 0.2s;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
     }
 
-    .nav-item:hover {
+    .tab-btn:hover {
         color: var(--yt-text-primary);
     }
 
-    .nav-item.active {
+    .tab-btn.active {
+        color: var(--yt-text-primary);
         border-bottom-color: var(--yt-text-primary);
-        color: var(--yt-text-primary);
     }
 
-    /* フィルター・ソートバー */
     .sort-container {
-        max-width: 1284px;
-        margin: 16px auto 0;
-        padding: 0 24px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
 
     .sort-select {
-        padding: 8px 12px;
-        border-radius: 8px;
         background-color: var(--yt-chip-bg);
         color: var(--yt-text-primary);
         border: 1px solid var(--yt-border-color);
+        padding: 6px 12px;
+        border-radius: 8px;
         font-size: 14px;
         outline: none;
         cursor: pointer;
     }
 
-    /* グリッドレイアウト (YouTube Video Grid) */
-    .container {
-        max-width: 1284px;
-        margin: 0 auto;
-        padding: 16px 24px 40px;
+    /* --- Common Grids --- */
+    .grid-videos {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
         gap: 16px;
     }
 
-    /* Shorts用グリッド (YouTube Shorts Grid) */
-    .shorts-grid {
+    .grid-shorts {
+        display: grid;
         grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-        gap: 16px 12px;
+        gap: 16px;
     }
 
-    /* 動画カード */
+    .grid-playlists {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 16px;
+    }
+
+    /* --- Video Card --- */
     .video-card {
-        text-decoration: none;
-        color: inherit;
         display: flex;
         flex-direction: column;
+        text-decoration: none;
+        color: var(--yt-text-primary);
+        border-radius: 12px;
+        overflow: hidden;
+        transition: transform 0.2s;
     }
 
-    .thumb-box {
+    .video-card:hover {
+        transform: translateY(-2px);
+    }
+
+    .thumbnail-wrapper {
         position: relative;
         width: 100%;
-        aspect-ratio: 16/9;
-        background-color: #000;
+        aspect-ratio: 16 / 9;
+        background-color: var(--yt-hover-bg);
         border-radius: 12px;
         overflow: hidden;
     }
 
-    .shorts-box {
-        aspect-ratio: 9/16;
-    }
-
-    .thumb {
+    .thumbnail-wrapper img {
         width: 100%;
         height: 100%;
         object-fit: cover;
     }
 
-    .v-title {
-        margin-top: 8px;
+    .video-time {
+        position: absolute;
+        bottom: 8px;
+        right: 8px;
+        background-color: rgba(0, 0, 0, 0.8);
+        color: #fff;
+        font-size: 12px;
         font-weight: 500;
+        padding: 3px 6px;
+        border-radius: 4px;
+    }
+
+    .video-title {
         font-size: 14px;
-        color: var(--yt-text-primary);
-        line-height: 1.3;
+        font-weight: 500;
+        margin: 10px 0 4px 0;
+        line-height: 1.4;
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
     }
 
-    .v-meta {
+    .video-meta-text {
         font-size: 12px;
         color: var(--yt-text-secondary);
-        margin-top: 4px;
-        line-height: 1.3;
     }
 
-    /* コミュニティ投稿 */
-    .comm-container {
-        max-width: 856px;
-        margin: 0 auto;
-        padding: 16px 24px 40px;
+    /* --- Shorts Card --- */
+    .short-card {
+        display: flex;
+        flex-direction: column;
+        text-decoration: none;
+        color: var(--yt-text-primary);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .short-thumbnail-wrapper {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 9 / 16;
+        background-color: var(--yt-hover-bg);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .short-thumbnail-wrapper img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    /* --- Community Tab --- */
+    .community-list {
         display: flex;
         flex-direction: column;
         gap: 16px;
+        max-width: 800px;
+        margin: 0 auto;
     }
 
-    .comm-post {
-        background-color: var(--yt-sidebar-bg);
+    .community-card {
+        background-color: var(--yt-chip-bg);
         border: 1px solid var(--yt-border-color);
         border-radius: 12px;
         padding: 16px;
     }
 
-    .comm-header {
+    .community-header {
         display: flex;
         align-items: center;
         gap: 12px;
         margin-bottom: 12px;
     }
 
-    .comm-icon {
+    .community-avatar {
         width: 40px;
         height: 40px;
         border-radius: 50%;
         object-fit: cover;
     }
 
-    .comm-author {
-        font-weight: 500;
-        font-size: 14px;
-        color: var(--yt-text-primary);
+    .community-author-info {
+        display: flex;
+        flex-direction: column;
     }
 
-    .comm-date {
+    .community-author {
+        font-size: 14px;
+        font-weight: 500;
+    }
+
+    .community-time {
         font-size: 12px;
         color: var(--yt-text-secondary);
     }
 
-    .comm-content {
+    .community-body {
         font-size: 14px;
+        line-height: 1.6;
         color: var(--yt-text-primary);
-        line-height: 1.5;
-        word-break: break-all;
+        margin-bottom: 12px;
+        word-break: break-word;
     }
 
-    .comm-footer {
-        margin-top: 12px;
-        color: var(--yt-text-secondary);
-        font-size: 13px;
+    .community-footer {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 16px;
+        color: var(--yt-text-secondary);
+        font-size: 13px;
     }
 
-    /* Responsive Adjustments */
-    @media (max-width: 600px) {
-        .channel-header {
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            padding: 20px 16px;
-        }
+    /* --- About Tab --- */
+    .about-container {
+        max-width: 800px;
+        background-color: var(--yt-chip-bg);
+        border: 1px solid var(--yt-border-color);
+        border-radius: 12px;
+        padding: 24px;
+        white-space: pre-wrap;
+        line-height: 1.6;
+        font-size: 15px;
+    }
 
-        .channel-icon {
+    .empty-state {
+        text-align: center;
+        padding: 48px 16px;
+        color: var(--yt-text-secondary);
+        font-size: 15px;
+    }
+
+    @media (max-width: 600px) {
+        .channel-info-main {
+            flex-direction: column;
+            text-align: center;
+        }
+        .channel-avatar {
             width: 80px;
             height: 80px;
         }
-
-        .channel-meta {
-            align-items: center;
+        .channel-title {
+            font-size: 20px;
         }
-
-        .channel-meta h1 {
-            font-size: 24px;
+        .grid-videos {
+            grid-template-columns: 1fr;
         }
-
-        .sub-btn {
-            align-self: center;
-        }
-
-        .container {
-            padding: 12px 16px 30px;
-            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        }
-
-        .shorts-grid {
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        .grid-shorts {
+            grid-template-columns: repeat(2, 1fr);
         }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="channel-header">
-    <img src="{{ author_icon }}" class="channel-icon" alt="icon">
-    <div class="channel-meta">
-        <h1>{{ author }}</h1>
-        <div class="sub-count">{{ sub_count }}</div>
-        <div class="desc-container">
-            <div id="channel-desc" class="desc-content">{{ description|safe }}</div>
-            <button id="desc-btn" class="desc-toggle" onclick="toggleDescription()">もっと見る</button>
-        </div>
-        <button id="subscribe-btn" class="sub-btn" onclick="toggleSubscribe('{{ ucid }}')">チャンネル登録</button>
-    </div>
-</div>
-
-<div class="channel-nav-wrapper">
-    <nav class="channel-nav">
-        <a href="/channel/{{ ucid }}?tab=videos" class="nav-item {{ 'active' if tab == 'videos' else '' }}">動画</a>
-        <a href="/channel/{{ ucid }}?tab=shorts" class="nav-item {{ 'active' if tab == 'shorts' else '' }}">Shorts</a>
-        <a href="/channel/{{ ucid }}?tab=playlists" class="nav-item {{ 'active' if tab == 'playlists' else '' }}">再生リスト</a>
-        <a href="/channel/{{ ucid }}?tab=community" class="nav-item {{ 'active' if tab == 'community' else '' }}">コミュニティ</a>
-    </nav>
-</div>
-
-{% if tab == "videos" %}
-<div class="sort-container">
-    <select class="sort-select" onchange="location.href='/channel/{{ ucid }}?tab=videos&sort_by=' + this.value">
-        <option value="newest" {{ 'selected' if sort_by == 'newest' else '' }}>最新順</option>
-        <option value="oldest" {{ 'selected' if sort_by == 'oldest' else '' }}>古い順</option>
-        <option value="popular" {{ 'selected' if sort_by == 'popular' else '' }}>人気順</option>
-    </select>
-</div>
-<main class="container">
-    {% for video in videos %}
-    <a href="/watch?v={{ video.videoId }}" class="video-card">
-        <div class="thumb-box">
-            <img class="thumb" src="/proxy/thumb?v={{ video.videoId }}" loading="lazy">
-        </div>
-        <div class="v-title">{{ video.title }}</div>
-        <div class="v-meta">{{ video.viewCountText }} • {{ video.publishedText }}</div>
-    </a>
-    {% endfor %}
-</main>
-
-{% elif tab == "shorts" %}
-<main class="container shorts-grid">
-    {% for short in shorts %}
-    <a href="/shorts/{{ short.videoId }}" class="video-card">
-        <div class="thumb-box shorts-box">
-            <img class="thumb" src="/proxy/thumb?v={{ short.videoId }}" loading="lazy">
-        </div>
-        <div class="v-title">{{ short.title }}</div>
-        <div class="v-meta">{{ short.viewCountText }}</div>
-    </a>
-    {% endfor %}
-</main>
-
-{% elif tab == "playlists" %}
-<main class="container">
-    {% for pl in playlists %}
-    <a href="/playlist?list={{ pl.id }}" class="video-card">
-        <div class="thumb-box">
-            <img class="thumb" src="{{ pl.thumbnail }}" loading="lazy">
-            <div style="position: absolute; right: 0; top: 0; bottom: 0; width: 40%; background: rgba(0,0,0,0.7); display: flex; flex-direction: column; align-items: center; justify-content: center; color: white;">
-                <i class="fas fa-list"></i>
-                <span style="font-size: 1.2rem; font-weight: bold;">{{ pl.video_count }}</span>
+<div class="channel-container">
+    <!-- チャンネルヘッダー -->
+    <div class="channel-header">
+        <div class="channel-info-main">
+            {% if author_icon %}
+                <img src="{{ author_icon }}" alt="{{ author }}" class="channel-avatar">
+            {% else %}
+                <div class="channel-avatar" style="display:flex;align-items:center;justify-content:center;">
+                    <span class="material-symbols-outlined" style="font-size:48px;color:var(--yt-text-secondary);">account_circle</span>
+                </div>
+            {% endif %}
+            
+            <div class="channel-meta">
+                <h1 class="channel-title">{{ author if author else "名称未設定チャンネル" }}</h1>
+                <div class="channel-sub-info">
+                    <span>チャンネル登録者数 {{ sub_count }}</span>
+                </div>
             </div>
         </div>
-        <div class="v-title">{{ pl.title }}</div>
-    </a>
-    {% endfor %}
-</main>
-
-{% elif tab == "community" %}
-<main class="comm-container">
-    {% for post in community %}
-    <div class="comm-post">
-        <div class="comm-header">
-            <img src="{{ post.author_icon }}" class="comm-icon">
-            <div>
-                <div class="comm-author">{{ post.author }}</div>
-                <div class="comm-date">{{ post.published_text }}</div>
-            </div>
-        </div>
-        <div class="comm-content">{{ post.content|safe }}</div>
-        <div class="comm-footer">
-            <i class="far fa-thumbs-up"></i> {{ post.likes }}
-        </div>
     </div>
-    {% endfor %}
-</main>
-{% endif %}
-{% endblock %}
 
-{% block extra_js %}
-<script>
-    function toggleDescription() {
-        const desc = document.getElementById('channel-desc');
-        const btn = document.getElementById('desc-btn');
-        if (desc.classList.contains('expanded')) {
-            desc.classList.remove('expanded');
-            btn.innerText = 'もっと見る';
-        } else {
-            desc.classList.add('expanded');
-            btn.innerText = '一部を表示';
-        }
-    }
+    <!-- タブナビゲーション & ソート機能 -->
+    <div class="channel-nav-bar">
+        <div class="channel-tabs">
+            <a href="?tab=videos&sort_by={{ sort_by }}" class="tab-btn {% if tab == 'videos' or not tab %}active{% endif %}">
+                <span class="material-symbols-outlined">smart_display</span> 動画
+            </a>
+            <a href="?tab=shorts&sort_by={{ sort_by }}" class="tab-btn {% if tab == 'shorts' %}active{% endif %}">
+                <span class="material-symbols-outlined">electric_bolt</span> ショート
+            </a>
+            <a href="?tab=playlists&sort_by={{ sort_by }}" class="tab-btn {% if tab == 'playlists' %}active{% endif %}">
+                <span class="material-symbols-outlined">playlist_play</span> 再生リスト
+            </a>
+            <a href="?tab=community&sort_by={{ sort_by }}" class="tab-btn {% if tab == 'community' %}active{% endif %}">
+                <span class="material-symbols-outlined">forum</span> コミュニティ
+            </a>
+            <a href="?tab=about&sort_by={{ sort_by }}" class="tab-btn {% if tab == 'about' %}active{% endif %}">
+                <span class="material-symbols-outlined">info</span> 概要
+            </a>
+        </div>
 
-    function toggleSubscribe(ucid) {
-        const btn = document.getElementById('subscribe-btn');
-        let subs = JSON.parse(localStorage.getItem('subscribed_channels') || '[]');
-        
-        if (subs.includes(ucid)) {
-            subs = subs.filter(id => id !== ucid);
-            btn.classList.remove('subscribed');
-            btn.innerText = 'チャンネル登録';
-        } else {
-            subs.push(ucid);
-            btn.classList.add('subscribed');
-            btn.innerText = '登録済み';
-        }
-        localStorage.setItem('subscribed_channels', JSON.stringify(subs));
-    }
+        {% if tab in ['videos', None] %}
+        <div class="sort-container">
+            <span class="material-symbols-outlined" style="font-size:20px;color:var(--yt-text-secondary);">sort</span>
+            <select class="sort-select" id="sortSelect" onchange="location = this.value;">
+                <option value="?tab=videos&sort_by=newest" {% if sort_by == 'newest' %}selected{% endif %}>最新順</option>
+                <option value="?tab=videos&sort_by=oldest" {% if sort_by == 'oldest' %}selected{% endif %}>古い順</option>
+                <option value="?tab=videos&sort_by=popular" {% if sort_by == 'popular' %}selected{% endif %}>人気順</option>
+            </select>
+        </div>
+        {% endif %}
+    </div>
 
-    // 初期ロード時の購読状態反映
-    window.addEventListener('DOMContentLoaded', () => {
-        const btn = document.getElementById('subscribe-btn');
-        const ucid = '{{ ucid }}';
-        let subs = JSON.parse(localStorage.getItem('subscribed_channels') || '[]');
-        if (subs.includes(ucid)) {
-            btn.classList.add('subscribed');
-            btn.innerText = '登録済み';
-        }
-    });
-</script>
+    <!-- メインコンテンツ表示切替 -->
+    {% if tab == 'videos' or not tab %}
+        <!-- 通常動画 -->
+        {% if videos %}
+            <div class="grid-videos">
+                {% for video in videos %}
+                    {% set video_id = video.get('videoId') or video.get('id') %}
+                    {% set video_title = video.get('title', '') %}
+                    {% set view_text = video.get('viewCountText') or video.get('viewsText') or '' %}
+                    {% set pub_text = video.get('publishedText') or video.get('publishedTime') or '' %}
+                    {% set length_sec = video.get('lengthSeconds') %}
+
+                    <a href="/watch?v={{ video_id }}" class="video-card">
+                        <div class="thumbnail-wrapper">
+                            <img src="https://img.youtube.com/vi/{{ video_id }}/mqdefault.jpg" alt="{{ video_title }}" loading="lazy">
+                            {% if length_sec %}
+                                {% set m = (length_sec // 60) %}
+                                {% set s = (length_sec % 60) %}
+                                <span class="video-time">{{ "%d:%02d"|format(m, s) }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="video-title">{{ video_title }}</div>
+                        <div class="video-meta-text">
+                            {% if view_text %}{{ view_text }}{% endif %}
+                            {% if view_text and pub_text %} • {% endif %}
+                            {% if pub_text %}{{ pub_text }}{% endif %}
+                        </div>
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">動画が見つかりませんでした。</div>
+        {% endif %}
+
+    {% elif tab == 'shorts' %}
+        <!-- ショート動画 -->
+        {% if shorts %}
+            <div class="grid-shorts">
+                {% for short in shorts %}
+                    {% set short_id = short.get('videoId') or short.get('id') %}
+                    {% set short_title = short.get('title', '') %}
+                    {% set view_text = short.get('viewCountText') or short.get('viewsText') or '' %}
+
+                    <a href="/watch?v={{ short_id }}" class="short-card">
+                        <div class="short-thumbnail-wrapper">
+                            <img src="https://img.youtube.com/vi/{{ short_id }}/hqdefault.jpg" alt="{{ short_title }}" loading="lazy">
+                        </div>
+                        <div class="video-title">{{ short_title }}</div>
+                        {% if view_text %}
+                            <div class="video-meta-text">{{ view_text }}</div>
+                        {% endif %}
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">ショート動画が見つかりませんでした。</div>
+        {% endif %}
+
+    {% elif tab == 'playlists' %}
+        <!-- 再生リスト -->
+        {% if playlists %}
+            <div class="grid-playlists">
+                {% for pl in playlists %}
+                    <a href="/playlist?list={{ pl.id }}" class="video-card">
+                        <div class="thumbnail-wrapper">
+                            {% if pl.thumbnail %}
+                                <img src="{{ pl.thumbnail }}" alt="{{ pl.title }}" loading="lazy">
+                            {% else %}
+                                <div style="display:flex;align-items:center;justify-content:center;height:100%;">
+                                    <span class="material-symbols-outlined" style="font-size:48px;color:var(--yt-text-secondary);">playlist_play</span>
+                                </div>
+                            {% endif %}
+                            <span class="video-time">{{ pl.video_count }} 本の動画</span>
+                        </div>
+                        <div class="video-title">{{ pl.title }}</div>
+                    </a>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">再生リストが見つかりませんでした。</div>
+        {% endif %}
+
+    {% elif tab == 'community' %}
+        <!-- コミュニティ投稿 -->
+        {% if community %}
+            <div class="community-list">
+                {% for post in community %}
+                    <div class="community-card">
+                        <div class="community-header">
+                            {% if post.author_icon %}
+                                <img src="{{ post.author_icon }}" alt="{{ post.author }}" class="community-avatar">
+                            {% else %}
+                                <div class="community-avatar" style="background:var(--yt-hover-bg);display:flex;align-items:center;justify-content:center;">
+                                    <span class="material-symbols-outlined">person</span>
+                                </div>
+                            {% endif %}
+                            <div class="community-author-info">
+                                <span class="community-author">{{ post.author }}</span>
+                                <span class="community-time">{{ post.published_text }}</span>
+                            </div>
+                        </div>
+                        <div class="community-body">
+                            {{ post.content | safe }}
+                        </div>
+                        <div class="community-footer">
+                            <span class="material-symbols-outlined" style="font-size:18px;">thumb_up</span>
+                            <span>{{ post.likes }}</span>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="empty-state">コミュニティ投稿はありません。</div>
+        {% endif %}
+
+    {% elif tab == 'about' %}
+        <!-- チャンネル概要 -->
+        {% if description %}
+            <div class="about-container">
+                {{ description | safe }}
+            </div>
+        {% else %}
+            <div class="empty-state">概要情報はありません。</div>
+        {% endif %}
+    {% endif %}
+</div>
 {% endblock %}
