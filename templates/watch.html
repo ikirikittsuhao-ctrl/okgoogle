@@ -290,7 +290,6 @@
         background-color: var(--yt-spec-button-chip-hover);
     }
 
-    /* 概要欄の折りたたみスタイル */
     .yt-description-container.collapsed .yt-description-body {
         display: -webkit-box;
         -webkit-line-clamp: 3;
@@ -326,6 +325,17 @@
         padding: 2px 8px;
         border-radius: 4px;
         border: 1px solid var(--yt-spec-border-color);
+    }
+
+    .yt-api-badge-detail {
+        font-size: 0.7rem;
+        color: var(--yt-spec-text-secondary);
+        background: rgba(255, 255, 255, 0.05);
+        padding: 4px 6px;
+        border-radius: 3px;
+        border: 1px solid var(--yt-spec-border-color);
+        margin-top: 4px;
+        display: inline-block;
     }
 
     .yt-description-body {
@@ -468,6 +478,40 @@
         background: var(--yt-spec-button-chip-hover);
     }
 
+    .yt-dropdown-header {
+        padding: 10px 16px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--yt-spec-text-secondary);
+        background: rgba(255, 255, 255, 0.05);
+        border-bottom: 1px solid var(--yt-spec-border-color);
+    }
+
+    .yt-dropdown-section {
+        padding: 8px 0;
+        border-bottom: 1px solid var(--yt-spec-border-color);
+    }
+
+    .yt-dropdown-section:last-child {
+        border-bottom: none;
+    }
+
+    .yt-dropdown-label {
+        padding: 6px 16px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        color: var(--yt-spec-text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .yt-dropdown-value {
+        padding: 6px 16px;
+        font-size: 0.75rem;
+        color: var(--yt-spec-text-primary);
+        word-break: break-all;
+    }
+
     .yt-modal-overlay {
         position: fixed;
         top: 0; left: 0; width: 100%; height: 100%;
@@ -574,6 +618,29 @@
     .yt-source-options.show { display: flex; }
     .yt-sub-item { font-size: 0.8rem; padding: 6px 10px; border-radius: 6px; cursor: pointer; }
     .yt-sub-item.selected { background: var(--yt-brand-red); color: white; }
+
+    .yt-api-status {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 6px;
+        animation: pulse-status 2s ease-in-out infinite;
+    }
+
+    .yt-api-status.active { background: #4CAF50; }
+    .yt-api-status.loading { background: #FFC107; animation: pulse-loading 1s ease-in-out infinite; }
+    .yt-api-status.error { background: #F44336; }
+
+    @keyframes pulse-status {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.6; }
+    }
+
+    @keyframes pulse-loading {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+    }
 </style>
 {% endblock %}
 
@@ -629,24 +696,27 @@
             </div>
             <div class="yt-source-options" id="streamApiOpts">
                 <div class="yt-sub-item selected" id="stream-api-default" onclick="selectStreamApi('default')">デフォルト API</div>
+                <div class="yt-sub-item" id="stream-api-sia" onclick="selectStreamApi('sia')">Sia API</div>
                 <div class="yt-sub-item" id="stream-api-piped" onclick="selectStreamApi('piped')">Piped API</div>
                 <div class="yt-sub-item" id="stream-api-invidious" onclick="selectStreamApi('invidious')">Invidious API</div>
-                <div class="yt-sub-item" id="stream-api-cobalt" onclick="selectStreamApi('cobalt')">Cobalt API</div>
+                <div class="yt-sub-item" id="stream-api-rapidapi" onclick="selectStreamApi('rapidapi')">RapidAPI</div>
+                <div class="yt-sub-item" id="stream-api-zernio" onclick="selectStreamApi('zernio')">Zernio API</div>
+                <div class="yt-sub-item" id="stream-api-sennin" onclick="selectStreamApi('sennin')">Sennin API</div>
             </div>
             <div class="yt-control-item" id="apiToggle" onclick="toggleApiOptions()">
                 <span>使用API切替</span><i class="fas fa-server"></i>
             </div>
             <div class="yt-source-options" id="apiOpts">
                 <div class="yt-sub-item selected" id="api-default" onclick="selectApi('default')">デフォルト API</div>
-                <div class="yt-sub-item" id="api-sia" onclick="selectApi('sia')">sia API</div>
-                <div class="yt-sub-item" id="api-sennin" onclick="selectApi('sennin')">sennin API</div>
+                <div class="yt-sub-item" id="api-invidious" onclick="selectApi('invidious')">Invidious API</div>
+                <div class="yt-sub-item" id="api-sia" onclick="selectApi('sia')">Sia API</div>
+                <div class="yt-sub-item" id="api-sennin" onclick="selectApi('sennin')">Sennin API</div>
                 {% if available_apis %}
                     {% for api in available_apis %}
                     <div class="yt-sub-item" id="api-{{ api.id }}" onclick="selectApi('{{ api.id }}')">{{ api.name }}</div>
                     {% endfor %}
                 {% else %}
                     <div class="yt-sub-item" id="api-piped" onclick="selectApi('piped')">Piped API</div>
-                    <div class="yt-sub-item" id="api-invidious" onclick="selectApi('invidious')">Invidious API</div>
                 {% endif %}
             </div>
         </div>
@@ -722,13 +792,52 @@
                             <div class="yt-dropdown-item" data-type="m3u8" data-value="{{ youtube_url }}">HLS (m3u8)</div>
                         </div>
                     </div>
+
+                    <div class="yt-custom-select" id="apiInfoSelect">
+                        <button class="yt-pill-button" id="apiInfoTrigger" onclick="toggleApiInfoDropdown(event)">
+                            <span class="yt-api-status loading"></span>
+                            <span id="apiInfoLabel">API: 取得中</span>
+                            <i class="fas fa-chevron-down" style="font-size: 0.75rem; margin-left: 2px;"></i>
+                        </button>
+                        <div class="yt-select-dropdown" id="apiInfoDropdown">
+                            <div class="yt-dropdown-section">
+                                <div class="yt-dropdown-label">情報取得API</div>
+                                <div id="infoApiDisplay" class="yt-dropdown-value">取得中...</div>
+                                <div id="infoApiStatusDisplay" class="yt-dropdown-value" style="color: var(--yt-spec-text-secondary); font-size: 0.7rem; margin-top: 2px;"></div>
+                            </div>
+                            <div class="yt-dropdown-section">
+                                <div class="yt-dropdown-label">ストリーム取得API</div>
+                                <div id="streamApiDisplay" class="yt-dropdown-value">取得中...</div>
+                                <div id="streamApiStatusDisplay" class="yt-dropdown-value" style="color: var(--yt-spec-text-secondary); font-size: 0.7rem; margin-top: 2px;"></div>
+                            </div>
+                            <div class="yt-dropdown-section">
+                                <div class="yt-dropdown-label">タイムアウト設定</div>
+                                <div class="yt-dropdown-value">
+                                    情報: <span id="timeoutInfoDisplay">4.0s</span> | ストリーム: <span id="timeoutStreamDisplay">2.5s</span>
+                                </div>
+                            </div>
+                            <div class="yt-dropdown-section">
+                                <div class="yt-dropdown-label">キャッシュ</div>
+                                <div class="yt-dropdown-value">
+                                    情報: <span id="cacheTtlInfoDisplay">180s</span> | ストリーム: <span id="cacheTtlStreamDisplay">120s</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             <div class="yt-description-container collapsed" id="description-container">
                 <div class="yt-description-header">
                     <span>{{ view_count if view_count else '---' }} 回視聴</span>
-                    <span class="yt-api-badge" id="api-info-badge">取得API: <span id="current-api-name">取得中...</span></span>
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <span class="yt-api-badge" id="api-info-badge">
+                            情報API: <span id="current-info-api-name">{{ info_api_used or '取得中' }}</span>
+                        </span>
+                        <span class="yt-api-badge" id="stream-info-badge">
+                            ストリームAPI: <span id="current-stream-api-name">{{ stream_api_used or '取得中' }}</span>
+                        </span>
+                    </div>
                 </div>
                 <div class="yt-description-body" id="description-body">
                     {% if description %}
@@ -747,7 +856,7 @@
                     {% if comments %}
                         {% for c in comments %}
                         <div class="yt-comment-item" style="display:flex; gap:16px; margin-bottom:20px;">
-                            <img src="{{ c.authorThumbnail if c.authorThumbnail else (c.authorThumbnails|last).url if c.authorThumbnails else '' }}" class="yt-comment-avatar" style="width:40px; height:40px; border-radius:50%; flex-shrink:0;">
+                            <img src="{{ c.authorThumbnail if c.authorThumbnail else (c.authorThumbnails|last).url if c.authorThumbnails else '' }}" class="yt-comment-avatar" style="width:40px; height:40px; border-radius:50%; flex-shrink:0;" onerror="this.style.display='none'">
                             <div>
                                 <div style="font-size:0.8rem; font-weight:600;">{{ c.author }} <span style="color:var(--yt-spec-text-secondary); font-weight:400;">{{ c.publishedText }}</span></div>
                                 <div style="font-size:0.875rem; margin-top:4px;">{{ c.contentHtml | safe }}</div>
@@ -772,7 +881,7 @@
                 {% for v in recommended_videos %}
                 <a href="/watch?v={{ v.video_id }}" class="yt-recommend-card">
                     <div class="yt-recommend-thumb-wrapper">
-                        <img src="/thumbnail?v={{ v.video_id }}" class="yt-recommend-thumb" loading="lazy" alt="{{ v.title }}">
+                        <img src="/thumbnail?v={{ v.video_id }}" class="yt-recommend-thumb" loading="lazy" alt="{{ v.title }}" onerror="this.style.opacity='0.3'">
                     </div>
                     <div class="yt-recommend-details">
                         <div class="yt-recommend-title">{{ v.title }}</div>
@@ -805,24 +914,53 @@
     const videoId = "{{ videoid }}";
     let hlsInstance = null;
 
-    // --- 音声・動画の同期ロジック ---
+    // ========== API設定情報 ==========
+    const API_CONFIG = {
+        info: {
+            apis: ['invidious', 'sia', 'sennin'],
+            timeouts: { invidious: 4.0, sia: 3.0, sennin: 4.0 },
+            cacheTtl: 180,
+            descriptions: {
+                invidious: 'Invidious集約API',
+                sia: 'Sia Tube API',
+                sennin: 'Sennin API',
+                default: 'デフォルト（自動フォールバック）'
+            }
+        },
+        stream: {
+            apis: ['sia', 'piped', 'rapidapi', 'zernio', 'invidious', 'sennin'],
+            timeouts: { sia: 2.5, piped: 2.5, rapidapi: 2.5, zernio: 3.0, invidious: 4.0, sennin: 3.5 },
+            cacheTtl: 120,
+            descriptions: {
+                sia: 'Sia Tube ストリーミング',
+                piped: 'Piped インスタンス',
+                rapidapi: 'RapidAPI YouTubeStreamer',
+                zernio: 'Zernio ダウンローダ',
+                invidious: 'Invidious ストリーム',
+                sennin: 'Sennin ストリーミング',
+                default: 'デフォルト（自動フォールバック）'
+            }
+        }
+    };
+
+    // ========== 音声・動画の同期ロジック ==========
     video.addEventListener('play', () => { if (audio.src) audio.play(); });
     video.addEventListener('pause', () => { if (audio.src) audio.pause(); });
     video.addEventListener('seeking', () => { if (audio.src) audio.currentTime = video.currentTime; });
     video.addEventListener('ratechange', () => { if (audio.src) audio.playbackRate = video.playbackRate; });
 
-    // --- UI モール・アラート制御 ---
+    // ========== UI モール・アラート制御 ==========
     function openModal() { document.getElementById('dl-modal').style.display = 'flex'; }
     function closeModal() { document.getElementById('dl-modal').style.display = 'none'; }
     
-    function showAlert(text) {
+    function showAlert(text, duration = 3000) {
         const el = document.getElementById('custom-alert');
         document.getElementById('alert-text').innerText = text;
         el.style.display = 'block';
-        setTimeout(() => { el.style.display = 'none'; }, 3000);
+        setTimeout(() => { el.style.display = 'none'; }, duration);
     }
 
-    // --- 概要欄のもっと見る・一部表示トグル機能 ---
+    // ========== 概要欄のもっと見る・一部表示トグル機能 ==========
     function toggleDescription() {
         const container = document.getElementById('description-container');
         const btn = document.getElementById('desc-toggle-btn');
@@ -835,31 +973,69 @@
         }
     }
 
-    // --- 使用API情報の更新表示 ---
-    function updateApiBadgeDisplay() {
+    // ========== API情報表示の更新 ==========
+    function updateApiDisplay() {
         const urlParams = new URLSearchParams(window.location.search);
-        const currentApi = urlParams.get('api') || localStorage.getItem('selected_api') || 'default';
+        const currentInfoApi = urlParams.get('api') || localStorage.getItem('selected_api') || 'default';
         const currentStreamApi = urlParams.get('stream_api') || localStorage.getItem('selected_stream_api') || 'default';
-        
-        const badgeElem = document.getElementById('current-api-name');
-        if (badgeElem) {
-            badgeElem.innerText = `メイン: ${currentApi} / Stream: ${currentStreamApi}`;
+
+        // 情報API表示
+        const infoApiDesc = API_CONFIG.info.descriptions[currentInfoApi] || API_CONFIG.info.descriptions.default;
+        const infoApiTimeout = API_CONFIG.info.timeouts[currentInfoApi] || '4.0s';
+        document.getElementById('infoApiDisplay').innerText = `${currentInfoApi} - ${infoApiDesc}`;
+        document.getElementById('infoApiStatusDisplay').innerText = `タイムアウト: ${infoApiTimeout}s`;
+        document.getElementById('current-info-api-name').innerText = currentInfoApi.toUpperCase();
+
+        // ストリームAPI表示
+        const streamApiDesc = API_CONFIG.stream.descriptions[currentStreamApi] || API_CONFIG.stream.descriptions.default;
+        const streamApiTimeout = API_CONFIG.stream.timeouts[currentStreamApi] || '2.5s';
+        document.getElementById('streamApiDisplay').innerText = `${currentStreamApi} - ${streamApiDesc}`;
+        document.getElementById('streamApiStatusDisplay').innerText = `タイムアウト: ${streamApiTimeout}s`;
+        document.getElementById('current-stream-api-name').innerText = currentStreamApi.toUpperCase();
+
+        // API情報ボタン表示
+        const infoApiShort = currentInfoApi === 'default' ? 'AUTO' : currentInfoApi.substring(0, 3).toUpperCase();
+        const streamApiShort = currentStreamApi === 'default' ? 'AUTO' : currentStreamApi.substring(0, 3).toUpperCase();
+        document.getElementById('apiInfoLabel').innerText = `API: ${infoApiShort} / ${streamApiShort}`;
+
+        // キャッシュTTL表示
+        document.getElementById('cacheTtlInfoDisplay').innerText = `${API_CONFIG.info.cacheTtl}s`;
+        document.getElementById('cacheTtlStreamDisplay').innerText = `${API_CONFIG.stream.cacheTtl}s`;
+
+        // タイムアウト表示
+        document.getElementById('timeoutInfoDisplay').innerText = `${infoApiTimeout}s`;
+        document.getElementById('timeoutStreamDisplay').innerText = `${streamApiTimeout}s`;
+
+        // ステータスインジケータ更新
+        const statusIndicator = document.querySelector('.yt-api-status');
+        if (statusIndicator) {
+            statusIndicator.classList.remove('loading', 'error', 'active');
+            statusIndicator.classList.add('active');
         }
     }
 
-    // --- ドロップダウン & コントロールメニュー ---
+    // ========== ドロップダウン制御 ==========
     function toggleQualityDropdown(e) {
         e.stopPropagation();
         document.getElementById('qualitySelect').classList.toggle('open');
+        document.getElementById('apiInfoSelect').classList.remove('open');
+    }
+
+    function toggleApiInfoDropdown(e) {
+        e.stopPropagation();
+        document.getElementById('apiInfoSelect').classList.toggle('open');
+        document.getElementById('qualitySelect').classList.remove('open');
     }
 
     document.addEventListener('click', () => {
         document.getElementById('qualitySelect').classList.remove('open');
+        document.getElementById('apiInfoSelect').classList.remove('open');
     });
 
-    document.querySelectorAll('.yt-dropdown-item').forEach(item => {
+    // ========== 画質選択ロジック ==========
+    document.querySelectorAll('#qualitySelect .yt-dropdown-item').forEach(item => {
         item.addEventListener('click', function() {
-            document.querySelectorAll('.yt-dropdown-item').forEach(i => i.classList.remove('selected'));
+            document.querySelectorAll('#qualitySelect .yt-dropdown-item').forEach(i => i.classList.remove('selected'));
             this.classList.add('selected');
             
             const videoUrl = this.getAttribute('data-value');
@@ -867,7 +1043,6 @@
             const type = this.getAttribute('data-type');
             
             document.getElementById('qualityLabel').innerText = "画質: " + this.innerText.trim();
-
             changeSource(videoUrl, audioUrl, type);
         });
     });
@@ -891,6 +1066,7 @@
                 video.src = vUrl;
             }
             audio.removeAttribute('src');
+            showAlert('HLS (m3u8) で再生中...', 2000);
         } else {
             video.src = vUrl;
             if (aUrl) {
@@ -899,11 +1075,12 @@
             } else {
                 audio.removeAttribute('src');
             }
+            showAlert('画質を変更しました', 1500);
         }
         video.play();
     }
 
-    // --- フローティングコントロール操作 ---
+    // ========== フローティングコントロール操作 ==========
     function toggleControlMenu() {
         const menu = document.getElementById('ctrlMenu');
         menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
@@ -912,14 +1089,14 @@
     function toggleLoop(el) {
         video.loop = !video.loop;
         el.classList.toggle('active', video.loop);
-        showAlert(video.loop ? "ループ再生をONにしました" : "ループ再生をOFFにしました");
+        showAlert(video.loop ? "ループ再生をONにしました" : "ループ再生をOFFにしました", 1500);
     }
 
     function toggleMute(el) {
         video.muted = !video.muted;
         audio.muted = video.muted;
         el.classList.toggle('active', video.muted);
-        showAlert(video.muted ? "ミュートにしました" : "ミュートを解除しました");
+        showAlert(video.muted ? "ミュートにしました" : "ミュートを解除しました", 1500);
     }
 
     function openQualityFromCtrl() {
@@ -948,6 +1125,7 @@
             iframeContainer.innerHTML = '';
             video.style.display = 'block';
             video.play();
+            showAlert('Stream 再生に切り替えました', 1500);
         } else {
             video.pause();
             video.style.display = 'none';
@@ -957,14 +1135,23 @@
             let embedUrl = "";
             if (mode === 'nocookie') {
                 embedUrl = `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1`;
+                showAlert('YouTube NoCookie で再生中...', 1500);
             } else if (mode === 'edu') {
                 embedUrl = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+                showAlert('YouTube Education で再生中...', 1500);
             }
             iframeContainer.innerHTML = `<iframe src="${embedUrl}" allow="autoplay; encrypted-media" allowfullscreen style="width:100%; height:100%; border:none;"></iframe>`;
         }
     }
 
+    // ========== API選択ロジック（改善版） ==========
     function selectStreamApi(apiId) {
+        const validApis = ['default', 'sia', 'piped', 'invidious', 'rapidapi', 'zernio', 'sennin'];
+        if (!validApis.includes(apiId)) {
+            showAlert('無効なAPI選択です', 2000);
+            return;
+        }
+
         document.querySelectorAll('#streamApiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
         const selectedElem = document.getElementById(`stream-api-${apiId}`);
         if (selectedElem) selectedElem.classList.add('selected');
@@ -974,13 +1161,21 @@
         const currentUrl = new URL(window.location.href);
         currentUrl.searchParams.set('stream_api', apiId);
         
-        showAlert(`Stream APIを「${apiId}」に変更します...`);
+        const apiDesc = API_CONFIG.stream.descriptions[apiId] || 'Unknown API';
+        showAlert(`ストリームAPI を「${apiDesc}」に変更します...`, 1500);
+        
         setTimeout(() => {
             window.location.href = currentUrl.toString();
         }, 500);
     }
 
     function selectApi(apiId) {
+        const validApis = ['default', 'invidious', 'sia', 'sennin', 'piped'];
+        if (!validApis.includes(apiId)) {
+            showAlert('無効なAPI選択です', 2000);
+            return;
+        }
+
         document.querySelectorAll('#apiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
         const selectedElem = document.getElementById(`api-${apiId}`);
         if (selectedElem) selectedElem.classList.add('selected');
@@ -990,55 +1185,69 @@
         const currentUrl = new URL(window.location.href);
         currentUrl.searchParams.set('api', apiId);
         
-        showAlert(`APIを「${apiId}」に変更します...`);
+        const apiDesc = API_CONFIG.info.descriptions[apiId] || 'Unknown API';
+        showAlert(`情報取得API を「${apiDesc}」に変更します...`, 1500);
+        
         setTimeout(() => {
             window.location.href = currentUrl.toString();
         }, 500);
     }
 
+    // ========== 初期化処理 ==========
     document.addEventListener('DOMContentLoaded', () => {
         const urlParams = new URLSearchParams(window.location.search);
-        const currentApi = urlParams.get('api') || localStorage.getItem('selected_api') || 'default';
-        
-        document.querySelectorAll('#apiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
-        const activeApiElem = document.getElementById(`api-${currentApi}`);
-        if (activeApiElem) {
-            activeApiElem.classList.add('selected');
-        }
-
+        const currentInfoApi = urlParams.get('api') || localStorage.getItem('selected_api') || 'default';
         const currentStreamApi = urlParams.get('stream_api') || localStorage.getItem('selected_stream_api') || 'default';
+        
+        // API選択状態を復元
+        document.querySelectorAll('#apiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
+        const activeApiElem = document.getElementById(`api-${currentInfoApi}`);
+        if (activeApiElem) activeApiElem.classList.add('selected');
+
         document.querySelectorAll('#streamApiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
         const activeStreamApiElem = document.getElementById(`stream-api-${currentStreamApi}`);
-        if (activeStreamApiElem) {
-            activeStreamApiElem.classList.add('selected');
-        }
+        if (activeStreamApiElem) activeStreamApiElem.classList.add('selected');
 
-        updateApiBadgeDisplay();
-    });
-    document.addEventListener('DOMContentLoaded', () => {
-        // --- API設定読み込み ---
-        const urlParams = new URLSearchParams(window.location.search);
-        const currentApi = urlParams.get('api') || localStorage.getItem('selected_api') || 'default';
-        
-        document.querySelectorAll('#apiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
-        const activeApiElem = document.getElementById(`api-${currentApi}`);
-        if (activeApiElem) {
-            activeApiElem.classList.add('selected');
-        }
-
-        const currentStreamApi = urlParams.get('stream_api') || localStorage.getItem('selected_stream_api') || 'default';
-        document.querySelectorAll('#streamApiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
-        const activeStreamApiElem = document.getElementById(`stream-api-${currentStreamApi}`);
-        if (activeStreamApiElem) {
-            activeStreamApiElem.classList.add('selected');
-        }
-
-        // --- 設定画面 (settings.html) で設定されたデフォルト再生形式の自動適用 ---
+        // ユーザー設定の埋め込み再生モードを復元
         const preferredEmbedMode = localStorage.getItem('pref_embed_mode') || 'stream';
         setExternalSource(preferredEmbedMode);
 
-        updateApiBadgeDisplay();
+        // API情報表示を更新
+        updateApiDisplay();
+
+        // 推奨ビデオのプリロード（高速化）
+        const thumbs = document.querySelectorAll('.yt-recommend-thumb');
+        thumbs.forEach(thumb => {
+            thumb.loading = 'lazy';
+        });
     });
 
+    // ========== パフォーマンス最適化 ==========
+    // IntersectionObserver を使用した遅延ロード
+    if ('IntersectionObserver' in window) {
+        const observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting && entry.target.tagName === 'IMG') {
+                    const img = entry.target;
+                    if (img.dataset.src) {
+                        img.src = img.dataset.src;
+                        img.removeAttribute('data-src');
+                        observer.unobserve(img);
+                    }
+                }
+            });
+        });
+
+        document.querySelectorAll('img[data-src]').forEach(img => observer.observe(img));
+    }
+
+    // ページ離脱時のリソース解放
+    window.addEventListener('beforeunload', () => {
+        if (hlsInstance) {
+            hlsInstance.destroy();
+        }
+        video.src = '';
+        audio.src = '';
+    });
 </script>
 {% endblock %}
