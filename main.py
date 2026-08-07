@@ -36,6 +36,20 @@ async def index(request: Request):
       else ["ボカロ", "VTuber", "ゲーム実況", "音楽", "ニュース"]
   )
 
+  async def fetch_trending_results():
+    try:
+      from app.search import fetch_invidious
+      res = await fetch_invidious("/trending", {"region": "JP"}, list_type="trending")
+      if isinstance(res, list):
+        return [
+            item
+            for item in res
+            if item.get("type") in ["video", None] and item.get("videoId")
+        ]
+    except:
+      pass
+    return []
+
   async def fetch_keyword_results(kw):
     try:
       from app.search import fetch_invidious
@@ -52,7 +66,7 @@ async def index(request: Request):
       pass
     return []
 
-  tasks = [fetch_keyword_results(kw) for kw in recent_keywords]
+  tasks = [fetch_trending_results()] + [fetch_keyword_results(kw) for kw in recent_keywords]
   results_list = await asyncio.gather(*tasks)
 
   recommended_videos = []
