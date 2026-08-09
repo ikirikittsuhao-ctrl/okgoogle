@@ -1,4 +1,4 @@
-import asyncio
+Import asyncio
 from datetime import datetime
 import json
 import httpx
@@ -667,6 +667,7 @@ async def shorts_player(
 async def watch(
     request: Request,
     v: str = Query(...),
+    list: Optional[str] = Query(None),
     force_instance: Optional[str] = Query(None),
     api: Optional[str] = Query(None),
 ):
@@ -679,8 +680,24 @@ async def watch(
         stream_task = fetch_fastest_stream_urls(v, api=api, force_instance=force_instance)
         comment_task = fetch_comments(v, force_instance=force_instance, api=api)
 
-        video_data, stream_res, comment_data = await asyncio.gather(
-            info_task, stream_task, comment_task, return_exceptions=True
+        async def _fetch_playlist():
+            if not list:
+                return None
+            try:
+                res = await asyncio.wait_for(
+                    fetch_invidious(f"/playlists/{list}", force_instance=force_instance),
+                    timeout=4.0
+                )
+                if isinstance(res, dict) and not res.get("error"):
+                    return res
+            except Exception as e:
+                logger.debug(f"Playlist error: {e}")
+            return None
+
+        playlist_task = _fetch_playlist()
+
+        video_data, stream_res, comment_data, playlist_data = await asyncio.gather(
+            info_task, stream_task, comment_task, playlist_task, return_exceptions=True
         )
 
         if isinstance(video_data, Exception) and isinstance(stream_res, Exception):
@@ -688,6 +705,17 @@ async def watch(
 
         v_data = video_data if isinstance(video_data, dict) else {}
         s_data = stream_res if isinstance(stream_res, dict) else {}
+        p_data = playlist_data if isinstance(playlist_data, dict) else {}
+
+        # プレイリスト動画の整理
+        playlist_videos = []
+        for item in p_data.get("videos", []):
+            if isinstance(item, dict):
+                playlist_videos.append({
+                    "videoId": item.get("videoId"),
+                    "title": item.get("title"),
+                    "author": item.get("author")
+                })
 
         # ストリーム情報の取得
         stream_urls = s_data.get("streamUrls", [])
@@ -746,6 +774,9 @@ async def watch(
                 "info_api_used": info_api_used,
                 "stream_api_used": stream_api_used,
                 "api_used": info_api_used,
+                "playlist_id": list,
+                "playlist_title": p_data.get("title", ""),
+                "playlist_videos": playlist_videos,
             },
         )
 
