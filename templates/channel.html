@@ -457,15 +457,20 @@
     </header>
 
     <!-- タブ ナビゲーション -->
+    {% set ext_params = "" %}
+    {% if request.query_params.get("force_instance") %}
+        {% set ext_params = ext_params ~ "&force_instance=" ~ request.query_params.get("force_instance") %}
+    {% endif %}
+    {% if request.query_params.get("api") %}
+        {% set ext_params = ext_params ~ "&api=" ~ request.query_params.get("api") %}
+    {% endif %}
+
     <div class="channel-tabs-container">
         <nav class="channel-tabs">
-            {% set query_params = ("&force_instance=" ~ request.query_params.get("force_instance")) if request.query_params.get("force_instance") else "" %}
-            {% set query_params = query_params ~ (("&api=" ~ request.query_params.get("api")) if request.query_params.get("api") else "") %}
-
-            <a href="/channel/{{ ucid }}?tab=videos{{ query_params }}" class="tab-item {{ 'active' if tab == 'videos' or not tab else '' }}">動画</a>
-            <a href="/channel/{{ ucid }}?tab=shorts{{ query_params }}" class="tab-item {{ 'active' if tab == 'shorts' else '' }}">Shorts</a>
-            <a href="/channel/{{ ucid }}?tab=playlists{{ query_params }}" class="tab-item {{ 'active' if tab == 'playlists' else '' }}">再生リスト</a>
-            <a href="/channel/{{ ucid }}?tab=community{{ query_params }}" class="tab-item {{ 'active' if tab == 'community' else '' }}">コミュニティ</a>
+            <a href="/channel/{{ ucid }}?tab=videos{{ ext_params }}" class="tab-item {{ 'active' if tab == 'videos' or not tab else '' }}">動画</a>
+            <a href="/channel/{{ ucid }}?tab=shorts{{ ext_params }}" class="tab-item {{ 'active' if tab == 'shorts' else '' }}">Shorts</a>
+            <a href="/channel/{{ ucid }}?tab=playlists{{ ext_params }}" class="tab-item {{ 'active' if tab == 'playlists' else '' }}">再生リスト</a>
+            <a href="/channel/{{ ucid }}?tab=community{{ ext_params }}" class="tab-item {{ 'active' if tab == 'community' else '' }}">コミュニティ</a>
         </nav>
     </div>
 
@@ -473,9 +478,9 @@
     {% if tab == "videos" or not tab %}
     <!-- ソート選択バー -->
     <div class="sort-chips-bar">
-        <a href="/channel/{{ ucid }}?tab=videos&sort_by=newest{{ query_params }}" class="sort-chip {{ 'active' if sort_by == 'newest' or not sort_by else '' }}">最新順</a>
-        <a href="/channel/{{ ucid }}?tab=videos&sort_by=popular{{ query_params }}" class="sort-chip {{ 'active' if sort_by == 'popular' else '' }}">人気順</a>
-        <a href="/channel/{{ ucid }}?tab=videos&sort_by=oldest{{ query_params }}" class="sort-chip {{ 'active' if sort_by == 'oldest' else '' }}">古い順</a>
+        <a href="/channel/{{ ucid }}?tab=videos&sort_by=newest{{ ext_params }}" class="sort-chip {{ 'active' if sort_by == 'newest' or not sort_by else '' }}">最新順</a>
+        <a href="/channel/{{ ucid }}?tab=videos&sort_by=popular{{ ext_params }}" class="sort-chip {{ 'active' if sort_by == 'popular' else '' }}">人気順</a>
+        <a href="/channel/{{ ucid }}?tab=videos&sort_by=oldest{{ ext_params }}" class="sort-chip {{ 'active' if sort_by == 'oldest' else '' }}">古い順</a>
     </div>
 
     <main class="video-grid">
