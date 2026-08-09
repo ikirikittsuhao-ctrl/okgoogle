@@ -230,6 +230,17 @@ class DataParser:
             if value := channel_data.get(key):
                 return value
         return ""
+
+    @staticmethod
+    def extract_banner_url(channel_data: Dict) -> str:
+        if banners := channel_data.get("authorBanners"):
+            if isinstance(banners, list) and banners:
+                return banners[-1].get("url", "")
+        
+        for key in ("bannerUrl", "mobileBannerUrl", "banner", "authorBanner"):
+            if value := channel_data.get(key):
+                return value
+        return ""
     
     @staticmethod
     def parse_playlists(playlists_data: Any) -> List[Dict]:
@@ -298,7 +309,7 @@ async def channel(
     api: str = Query(None),
 ):
     try:
-        cache_key = f"ch_full:{ucid}:{sort_by}:{force_instance or 'auto'}:{api or 'auto'}"
+        cache_key = f"ch_full:{ucid}:{sort_by}:{tab}:{force_instance or 'auto'}:{api or 'auto'}"
         
         cached = _cache.get(cache_key)
         if cached:
@@ -333,6 +344,7 @@ async def channel(
         
         author_name = DataParser.extract_channel_name(channel_data)
         author_icon = DataParser.extract_author_icon(channel_data)
+        banner_url = DataParser.extract_banner_url(channel_data)
         
         raw_sub_count = (
             channel_data.get("subCountText")
@@ -359,6 +371,9 @@ async def channel(
             "ucid": ucid,
             "author": author_name,
             "author_icon": author_icon,
+            "banner_url": banner_url,
+            "handle": channel_data.get("handle", ""),
+            "video_count": channel_data.get("totalVideos") or channel_data.get("videoCount"),
             "sub_count": sub_count,
             "description": channel_data.get("descriptionHtml") or channel_data.get("description", ""),
             "videos": final_videos,
