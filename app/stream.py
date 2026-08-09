@@ -1,4 +1,4 @@
-import asyncio
+Import asyncio
 import random
 import time
 from typing import Optional, Dict, List, Any
@@ -566,6 +566,14 @@ async def fetch_fastest_stream_urls(
                     return result.to_dict()
             except Exception:
                 pass
+
+        # Zernio 最優先試行
+        try:
+            zernio_result = await fetch_zernio_stream(v)
+            if zernio_result and zernio_result.video_urls:
+                return zernio_result.to_dict()
+        except Exception:
+            pass
 
         # 2. Invidious 優先（安定性重視）
         try:
