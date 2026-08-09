@@ -3,6 +3,7 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.exceptions import HTTPException as StarletteHTTPException
 import json
 from datetime import datetime
 import random
@@ -21,6 +22,19 @@ app.include_router(search_router)
 app.include_router(video_router)
 app.include_router(stream_router)
 app.include_router(channel_router)
+
+
+# --- 404 カスタムエラーハンドラー ---
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code == 404:
+        return templates.TemplateResponse(
+            "404.html",
+            {"request": request},
+            status_code=404
+        )
+    return JSONResponse(content={"detail": exc.detail}, status_code=exc.status_code)
+
 
 @app.get("/api/recommended")
 async def get_recommended_api(request: Request):
