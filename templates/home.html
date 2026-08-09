@@ -129,6 +129,56 @@
         }
     }
 
+    /* --- 読み込みアニメーション（スケルトン） --- */
+    .skeleton-card {
+        display: flex;
+        flex-direction: column;
+        border-radius: 12px;
+        overflow: hidden;
+        pointer-events: none;
+    }
+
+    .skeleton-thumbnail {
+        width: 100%;
+        padding-top: 56.25%;
+        border-radius: 12px;
+        background-color: var(--yt-chip-bg, #e5e5e5);
+    }
+
+    .skeleton-info {
+        display: flex;
+        padding: 12px 0 0 0;
+        gap: 12px;
+    }
+
+    .skeleton-details {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        gap: 8px;
+    }
+
+    .skeleton-line {
+        height: 14px;
+        border-radius: 4px;
+        background-color: var(--yt-chip-bg, #e5e5e5);
+    }
+
+    .skeleton-line.title-1 { width: 90%; height: 16px; }
+    .skeleton-line.title-2 { width: 60%; height: 16px; }
+    .skeleton-line.author  { width: 40%; }
+    .skeleton-line.meta    { width: 50%; }
+
+    .skeleton-pulse {
+        animation: skeletonLoading 1.5s infinite ease-in-out;
+    }
+
+    @keyframes skeletonLoading {
+        0% { opacity: 0.4; }
+        50% { opacity: 0.8; }
+        100% { opacity: 0.4; }
+    }
+
     /* モバイル・画面幅縮小時の調整 */
     @media (max-width: 600px) {
         .video-grid {
@@ -136,15 +186,18 @@
             gap: 16px;
         }
 
-        .video-thumbnail {
+        .video-thumbnail,
+        .skeleton-thumbnail {
             border-radius: 0; /* スマホ全幅表示時に角丸を解除（YouTube公式風） */
         }
         
-        .video-card {
+        .video-card,
+        .skeleton-card {
             border-radius: 0;
         }
 
-        .video-info {
+        .video-info,
+        .skeleton-info {
             padding: 10px 12px 0 12px;
         }
     }
@@ -154,6 +207,95 @@
 {% block content %}
 <h2 class="section-title">おすすめ</h2>
 <div class="video-grid" id="video-grid">
+    <!-- 読み込み時に表示されるスケルトンカード -->
+    <div class="skeleton-card skeleton-pulse">
+        <div class="skeleton-thumbnail"></div>
+        <div class="skeleton-info">
+            <div class="skeleton-details">
+                <div class="skeleton-line title-1"></div>
+                <div class="skeleton-line title-2"></div>
+                <div class="skeleton-line author"></div>
+                <div class="skeleton-line meta"></div>
+            </div>
+        </div>
+    </div>
+    <div class="skeleton-card skeleton-pulse">
+        <div class="skeleton-thumbnail"></div>
+        <div class="skeleton-info">
+            <div class="skeleton-details">
+                <div class="skeleton-line title-1"></div>
+                <div class="skeleton-line title-2"></div>
+                <div class="skeleton-line author"></div>
+                <div class="skeleton-line meta"></div>
+            </div>
+        </div>
+    </div>
+    <div class="skeleton-card skeleton-pulse">
+        <div class="skeleton-thumbnail"></div>
+        <div class="skeleton-info">
+            <div class="skeleton-details">
+                <div class="skeleton-line title-1"></div>
+                <div class="skeleton-line title-2"></div>
+                <div class="skeleton-line author"></div>
+                <div class="skeleton-line meta"></div>
+            </div>
+        </div>
+    </div>
+    <div class="skeleton-card skeleton-pulse">
+        <div class="skeleton-thumbnail"></div>
+        <div class="skeleton-info">
+            <div class="skeleton-details">
+                <div class="skeleton-line title-1"></div>
+                <div class="skeleton-line title-2"></div>
+                <div class="skeleton-line author"></div>
+                <div class="skeleton-line meta"></div>
+            </div>
+        </div>
+    </div>
+    <div class="skeleton-card skeleton-pulse">
+        <div class="skeleton-thumbnail"></div>
+        <div class="skeleton-info">
+            <div class="skeleton-details">
+                <div class="skeleton-line title-1"></div>
+                <div class="skeleton-line title-2"></div>
+                <div class="skeleton-line author"></div>
+                <div class="skeleton-line meta"></div>
+            </div>
+        </div>
+    </div>
+    <div class="skeleton-card skeleton-pulse">
+        <div class="skeleton-thumbnail"></div>
+        <div class="skeleton-info">
+            <div class="skeleton-details">
+                <div class="skeleton-line title-1"></div>
+                <div class="skeleton-line title-2"></div>
+                <div class="skeleton-line author"></div>
+                <div class="skeleton-line meta"></div>
+            </div>
+        </div>
+    </div>
+    <div class="skeleton-card skeleton-pulse">
+        <div class="skeleton-thumbnail"></div>
+        <div class="skeleton-info">
+            <div class="skeleton-details">
+                <div class="skeleton-line title-1"></div>
+                <div class="skeleton-line title-2"></div>
+                <div class="skeleton-line author"></div>
+                <div class="skeleton-line meta"></div>
+            </div>
+        </div>
+    </div>
+    <div class="skeleton-card skeleton-pulse">
+        <div class="skeleton-thumbnail"></div>
+        <div class="skeleton-info">
+            <div class="skeleton-details">
+                <div class="skeleton-line title-1"></div>
+                <div class="skeleton-line title-2"></div>
+                <div class="skeleton-line author"></div>
+                <div class="skeleton-line meta"></div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -162,6 +304,7 @@ document.addEventListener("DOMContentLoaded", function() {
         .then(response => response.json())
         .then(videos => {
             const grid = document.getElementById("video-grid");
+            grid.innerHTML = ""; // 読み込み完了後にスケルトン表示を消去
             videos.forEach((video, index) => {
                 const card = document.createElement("a");
                 card.href = `/watch?v=${video.videoId}`;
