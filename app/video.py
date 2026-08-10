@@ -25,21 +25,21 @@ templates.env.add_extension("jinja2.ext.do")
 INFO_API_CONFIG = {
     "invidious": {
         "priority": 1,
-        "timeout": 3.0,
+        "timeout": 4.0,
         "description": "Invidious 集約API",
         "features": ["video info", "comments", "recommendations"],
         "max_retries": 2,
     },
     "sia": {
         "priority": 2,
-        "timeout": 2.5,
+        "timeout": 3.0,
         "description": "Sia Tube API",
         "features": ["video info", "recommendations"],
         "max_retries": 2,
     },
     "sennin": {
         "priority": 3,
-        "timeout": 3.0,
+        "timeout": 4.0,
         "description": "Sennin API",
         "features": ["video info", "extended stats"],
         "max_retries": 1,
@@ -53,64 +53,88 @@ CACHE_CONFIG = {
     "recommended": 1800.0,
 }
 
-_API_STATS = {
-    "invidious": {"success": 0, "failure": 0, "avg_time": 0},
-    "sia": {"success": 0, "failure": 0, "avg_time": 0},
-    "sennin": {"success": 0, "failure": 0, "avg_time": 0},
+_API_STATS: Dict[str, Dict[str, Any]] = {
+    "invidious": {"success": 0, "failure": 0, "avg_time": 0.0},
+    "sia": {"success": 0, "failure": 0, "avg_time": 0.0},
+    "sennin": {"success": 0, "failure": 0, "avg_time": 0.0},
 }
 _STATS_LOCK = asyncio.Lock()
+
+# シンプルなインメモリキャッシュ（fetch_with_inflightが提供しない場合のフォールバック）
+_simple_cache: Dict[str, Tuple[Any, float]] = {}
+_cache_lock = asyncio.Lock()
+
+
+async def _cache_get(key: str) -> Optional[Any]:
+    async with _cache_lock:
+        entry = _simple_cache.get(key)
+        if entry is None:
+            return None
+        value, expire_at = entry
+        if asyncio.get_event_loop().time() > expire_at:
+            del _simple_cache[key]
+            return None
+        return value
+
+
+async def _cache_set(key: str, value: Any, ttl: float) -> None:
+    async with _cache_lock:
+        expire_at = asyncio.get_event_loop().time() + ttl
+        _simple_cache[key] = (value, expire_at)
 
 
 async def record_api_performance(api: str, success: bool, duration: float) -> None:
     async with _STATS_LOCK:
         if api not in _API_STATS:
             return
-        
+
         stats = _API_STATS[api]
         if success:
             stats["success"] += 1
             total_calls = stats["success"] + stats["failure"]
-            stats["avg_time"] = (
-                stats["avg_time"] * (total_calls - 1) / total_calls +
-                duration / total_calls
-            )
+            if total_calls > 0:
+                stats["avg_time"] = (
+                    stats["avg_time"] * (total_calls - 1) / total_calls
+                    + duration / total_calls
+                )
         else:
             stats["failure"] += 1
 
 
+# ─────────────────────────────────────────────
+#  各 API ごとの取得関数
+# ─────────────────────────────────────────────
+
 async def fetch_sennin_video_info(v: str) -> Optional[Dict[str, Any]]:
     cache_key = f"sennin_video:{v}"
-    cached = fetch_with_inflight.__self__.get_cache(cache_key) if hasattr(fetch_with_inflight, '__self__') else None
-    if cached:
+    cached = await _cache_get(cache_key)
+    if cached is not None:
         return cached
-    
+
     start_time = asyncio.get_event_loop().time()
-    
+
     try:
         url = f"https://discerning-adventure-production-ebfc.up.railway.app/api/video/{v}"
         resp = await asyncio.wait_for(
             client_session.get(url, timeout=httpx.Timeout(3.0, connect=1.0, read=2.0)),
-            timeout=3.5
+            timeout=3.5,
         )
-        
+
         if resp.status_code == 200:
             data = resp.json()
             if data and not data.get("unavailable"):
                 norm_data = normalize_sennin_video_info(data)
                 norm_data["api_used"] = "sennin"
-                
-                if hasattr(fetch_with_inflight, '__self__'):
-                    fetch_with_inflight.__self__.set_cache(cache_key, norm_data, ttl=CACHE_CONFIG["video_info"])
-                
+                await _cache_set(cache_key, norm_data, CACHE_CONFIG["video_info"])
                 duration = asyncio.get_event_loop().time() - start_time
                 await record_api_performance("sennin", True, duration)
                 return norm_data
-    
+
     except asyncio.TimeoutError:
         logger.debug(f"Sennin timeout for video {v}")
     except Exception as e:
         logger.debug(f"Sennin error for video {v}: {e}")
-    
+
     duration = asyncio.get_event_loop().time() - start_time
     await record_api_performance("sennin", False, duration)
     return None
@@ -118,19 +142,19 @@ async def fetch_sennin_video_info(v: str) -> Optional[Dict[str, Any]]:
 
 async def fetch_sia_video(v: str) -> Optional[Dict[str, Any]]:
     cache_key = f"sia_video:{v}"
-    cached = fetch_with_inflight.__self__.get_cache(cache_key) if hasattr(fetch_with_inflight, '__self__') else None
-    if cached:
+    cached = await _cache_get(cache_key)
+    if cached is not None:
         return cached
-    
+
     start_time = asyncio.get_event_loop().time()
-    
+
     try:
         url = f"https://siatube.com/api/video/{v}"
         resp = await asyncio.wait_for(
             client_session.get(url, timeout=httpx.Timeout(2.5, connect=1.0, read=1.5)),
-            timeout=3.0
+            timeout=3.0,
         )
-        
+
         if resp.status_code == 200:
             data = resp.json()
 
@@ -158,7 +182,6 @@ async def fetch_sia_video(v: str) -> Optional[Dict[str, Any]]:
                 if isinstance(rel_data, dict)
                 else (rel_data if isinstance(rel_data, list) else [])
             )
-
             recommended = _process_related_videos(raw_rel)
 
             result = {
@@ -174,35 +197,196 @@ async def fetch_sia_video(v: str) -> Optional[Dict[str, Any]]:
                 "thumbnail": data.get("thumbnail", ""),
                 "api_used": "sia",
             }
-            
-            if hasattr(fetch_with_inflight, '__self__'):
-                fetch_with_inflight.__self__.set_cache(cache_key, result, ttl=CACHE_CONFIG["video_info"])
-            
+
+            await _cache_set(cache_key, result, CACHE_CONFIG["video_info"])
             duration = asyncio.get_event_loop().time() - start_time
             await record_api_performance("sia", True, duration)
             return result
-    
+
     except asyncio.TimeoutError:
         logger.debug(f"Sia timeout for video {v}")
     except Exception as e:
         logger.debug(f"Sia error for video {v}: {e}")
-    
+
     duration = asyncio.get_event_loop().time() - start_time
     await record_api_performance("sia", False, duration)
     return None
 
 
+async def fetch_video_info_invidious_robust(
+    v: str,
+    force_instance: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    start_time = asyncio.get_event_loop().time()
+
+    # まずメインの fetch_invidious を試す
+    try:
+        res = await asyncio.wait_for(
+            fetch_invidious(
+                f"/videos/{v}",
+                force_instance=force_instance,
+                list_type="video",
+            ),
+            timeout=4.0,
+        )
+        if isinstance(res, dict) and not res.get("error") and (
+            res.get("title") or res.get("videoId")
+        ):
+            res["api_used"] = "invidious"
+            duration = asyncio.get_event_loop().time() - start_time
+            await record_api_performance("invidious", True, duration)
+            return res
+
+    except asyncio.TimeoutError:
+        logger.debug(f"Invidious primary timeout for video {v}")
+    except Exception as e:
+        logger.debug(f"Invidious primary error for video {v}: {e}")
+
+    # フォールバック: 複数インスタンスに並行リクエスト
+    base_instances = await get_invidious_instances_from_url(INVIDIOUS_VIDEO_LIST_URL)
+    if not base_instances:
+        duration = asyncio.get_event_loop().time() - start_time
+        await record_api_performance("invidious", False, duration)
+        return None
+
+    async def try_instance(instance: str) -> Optional[Dict[str, Any]]:
+        try:
+            url = f"{instance.rstrip('/')}/api/v1/videos/{v}"
+            resp = await asyncio.wait_for(
+                client_session.get(
+                    url,
+                    timeout=httpx.Timeout(3.0, connect=1.0, read=2.0),
+                ),
+                timeout=3.5,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict) and not data.get("error") and (
+                    data.get("title") or data.get("videoId")
+                ):
+                    data["api_used"] = "invidious"
+                    return data
+        except Exception:
+            pass
+        return None
+
+    tasks = [asyncio.create_task(try_instance(inst)) for inst in base_instances[:5]]
+    try:
+        for coro in asyncio.as_completed(tasks):
+            result = await coro
+            if result:
+                # 残タスクをキャンセル
+                for t in tasks:
+                    t.cancel()
+                duration = asyncio.get_event_loop().time() - start_time
+                await record_api_performance("invidious", True, duration)
+                return result
+    except Exception as e:
+        logger.debug(f"Invidious fallback error: {e}")
+    finally:
+        for t in tasks:
+            if not t.done():
+                t.cancel()
+
+    duration = asyncio.get_event_loop().time() - start_time
+    await record_api_performance("invidious", False, duration)
+    return None
+
+
+# ─────────────────────────────────────────────
+#  統合取得関数: api 指定 or 最速取得
+# ─────────────────────────────────────────────
+
+async def fetch_video_info(
+    v: str,
+    force_instance: Optional[str] = None,
+    api: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    api が指定されている場合はそのAPIで取得（失敗時はフォールバックなし）。
+    api が None の場合は全APIを並行起動し、最初に成功したものを返す。
+    """
+    cache_key = f"video_info:{v}:{force_instance or ''}:{api or 'auto'}"
+    cached = await _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    result: Optional[Dict[str, Any]] = None
+
+    if api == "invidious":
+        result = await fetch_video_info_invidious_robust(v, force_instance=force_instance)
+
+    elif api == "sia":
+        result = await fetch_sia_video(v)
+
+    elif api == "sennin":
+        result = await fetch_sennin_video_info(v)
+
+    else:
+        # ── デフォルト: 全API並行 → 最速レスポンスを採用 ──
+        result = await _fetch_video_info_fastest(v, force_instance=force_instance)
+
+    if result:
+        await _cache_set(cache_key, result, CACHE_CONFIG["video_info"])
+
+    return result
+
+
+async def _fetch_video_info_fastest(
+    v: str,
+    force_instance: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """全APIを並行起動し、最初に有効なレスポンスを返す。"""
+    loop = asyncio.get_event_loop()
+
+    # Taskとして登録（キャンセル可能にするため）
+    task_invidious = loop.create_task(
+        fetch_video_info_invidious_robust(v, force_instance=force_instance)
+    )
+    task_sia = loop.create_task(fetch_sia_video(v))
+    task_sennin = loop.create_task(fetch_sennin_video_info(v))
+
+    all_tasks = [task_invidious, task_sia, task_sennin]
+    result: Optional[Dict[str, Any]] = None
+
+    try:
+        for coro in asyncio.as_completed(all_tasks, timeout=5.0):
+            try:
+                res = await coro
+                if res and isinstance(res, dict) and (
+                    res.get("title") or res.get("videoId")
+                ):
+                    result = res
+                    break  # 最速の成功結果が得られたので終了
+            except asyncio.TimeoutError:
+                logger.debug(f"Fastest fetch: one API timed out for {v}")
+                break
+            except Exception as e:
+                logger.debug(f"Fastest fetch: API error for {v}: {e}")
+                continue
+    finally:
+        # 不要になったタスクを全てキャンセル
+        for t in all_tasks:
+            if not t.done():
+                t.cancel()
+        # キャンセルの完了を待機（suppress CancelledError）
+        await asyncio.gather(*all_tasks, return_exceptions=True)
+
+    return result
+
+
+# ─────────────────────────────────────────────
+#  ヘルパー関数
+# ─────────────────────────────────────────────
+
 def _process_related_videos(raw_rel: List[Any]) -> List[Dict[str, Any]]:
     recommended = []
-    
     for item in raw_rel:
         if not isinstance(item, dict):
             continue
-        
         thumb_url = item.get("thumbnail", "")
         if not thumb_url and isinstance(item.get("thumbnails"), list) and item["thumbnails"]:
             thumb_url = item["thumbnails"][0].get("url", "")
-
         recommended.append({
             "video_id": item.get("videoId") or item.get("id"),
             "title": item.get("title"),
@@ -210,7 +394,6 @@ def _process_related_videos(raw_rel: List[Any]) -> List[Dict[str, Any]]:
             "view_count_text": item.get("viewCountText"),
             "thumbnail": thumb_url,
         })
-    
     return recommended
 
 
@@ -218,7 +401,11 @@ def normalize_sennin_video_info(sennin_data: Dict[str, Any]) -> Dict[str, Any]:
     if not sennin_data or not isinstance(sennin_data, dict):
         return {}
 
-    author_info = sennin_data.get("author", {}) if isinstance(sennin_data.get("author"), dict) else {}
+    author_info = (
+        sennin_data.get("author", {})
+        if isinstance(sennin_data.get("author"), dict)
+        else {}
+    )
     author_name = author_info.get("name") or ""
     author_id = author_info.get("id") or ""
     author_icon = author_info.get("thumbnail") or ""
@@ -245,8 +432,8 @@ def normalize_sennin_video_info(sennin_data: Dict[str, Any]) -> Dict[str, Any]:
         "authorIcon": author_icon,
         "subCountText": sub_count,
         "viewCount": (
-            sennin_data.get("views") or
-            sennin_data.get("extended_stats", {}).get("views_original", 0)
+            sennin_data.get("views")
+            or sennin_data.get("extended_stats", {}).get("views_original", 0)
         ),
         "likeCount": sennin_data.get("likes", 0),
         "description": desc_text,
@@ -256,127 +443,6 @@ def normalize_sennin_video_info(sennin_data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-async def fetch_video_info_invidious_robust(
-    v: str,
-    force_instance: Optional[str] = None
-) -> Optional[Dict[str, Any]]:
-    cache_key = f"inv_video:{v}:{force_instance or ''}"
-    
-    start_time = asyncio.get_event_loop().time()
-    
-    try:
-        res = await asyncio.wait_for(
-            fetch_invidious(
-                f"/videos/{v}",
-                force_instance=force_instance,
-                list_type="video"
-            ),
-            timeout=4.0
-        )
-        
-        if isinstance(res, dict) and not res.get("error") and (res.get("title") or res.get("videoId")):
-            res["api_used"] = "invidious"
-            duration = asyncio.get_event_loop().time() - start_time
-            await record_api_performance("invidious", True, duration)
-            return res
-    
-    except asyncio.TimeoutError:
-        logger.debug(f"Invidious primary timeout for video {v}")
-    except Exception as e:
-        logger.debug(f"Invidious primary error for video {v}: {e}")
-
-    base_instances = await get_invidious_instances_from_url(INVIDIOUS_VIDEO_LIST_URL)
-    
-    if not base_instances:
-        duration = asyncio.get_event_loop().time() - start_time
-        await record_api_performance("invidious", False, duration)
-        return None
-
-    async def try_instance(instance: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = f"{instance.rstrip('/')}/api/v1/videos/{v}"
-            resp = await asyncio.wait_for(
-                client_session.get(
-                    url,
-                    timeout=httpx.Timeout(3.0, connect=1.0, read=2.0)
-                ),
-                timeout=3.5
-            )
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, dict) and not data.get("error") and (data.get("title") or data.get("videoId")):
-                    data["api_used"] = "invidious"
-                    return data
-        except Exception:
-            pass
-        return None
-
-    tasks = [try_instance(inst) for inst in base_instances[:5]]
-    results = await asyncio.gather(*tasks, return_exceptions=False)
-    
-    for result in results:
-        if result:
-            duration = asyncio.get_event_loop().time() - start_time
-            await record_api_performance("invidious", True, duration)
-            return result
-
-    duration = asyncio.get_event_loop().time() - start_time
-    await record_api_performance("invidious", False, duration)
-    return None
-
-
-async def fetch_video_info(
-    v: str,
-    force_instance: Optional[str] = None,
-    api: Optional[str] = None
-) -> Optional[Dict[str, Any]]:
-    cache_key = f"video_info:{v}:{force_instance or ''}:{api or ''}"
-
-    async def _do_fetch() -> Optional[Dict[str, Any]]:
-        if api == "invidious":
-            return await fetch_video_info_invidious_robust(v, force_instance=force_instance)
-        elif api == "sia":
-            result = await fetch_sia_video(v)
-            if result:
-                return result
-            return await fetch_video_info_invidious_robust(v, force_instance=force_instance)
-        elif api == "sennin":
-            result = await fetch_sennin_video_info(v)
-            if result:
-                return result
-            return await fetch_video_info_invidious_robust(v, force_instance=force_instance)
-
-        invidious_task = fetch_video_info_invidious_robust(v, force_instance=force_instance)
-        sia_task = fetch_sia_video(v)
-        sennin_task = fetch_sennin_video_info(v)
-
-        tasks = {
-            invidious_task: "invidious",
-            sia_task: "sia",
-            sennin_task: "sennin",
-        }
-
-        for coro in asyncio.as_completed(tasks.keys(), timeout=5.0):
-            try:
-                result = await coro
-                if result:
-                    return result
-            except asyncio.TimeoutError:
-                break
-            except Exception:
-                continue
-
-        return None
-
-    return await fetch_with_inflight(
-        cache_key,
-        _do_fetch,
-        ttl=CACHE_CONFIG["video_info"],
-        retry_count=1
-    )
-
-
 def extract_invidious_streams(v_data: Dict[str, Any]) -> Dict[str, List]:
     if not v_data:
         return {"streamUrls": [], "videoUrls": []}
@@ -384,13 +450,12 @@ def extract_invidious_streams(v_data: Dict[str, Any]) -> Dict[str, List]:
     adaptive = v_data.get("adaptiveFormats", [])
     format_streams = v_data.get("formatStreams", [])
 
+    # 日本語音声を優先、なければ最初の音声トラック
     audio_url = None
     for f in adaptive:
-        if "audio" in f.get("type", ""):
-            if f.get("language") == "ja":
-                audio_url = f.get("url")
-                break
-    
+        if "audio" in f.get("type", "") and f.get("language") == "ja":
+            audio_url = f.get("url")
+            break
     if not audio_url:
         for f in adaptive:
             if "audio" in f.get("type", ""):
@@ -406,7 +471,6 @@ def extract_invidious_streams(v_data: Dict[str, Any]) -> Dict[str, List]:
         }
         for fmt in format_streams
     ]
-
     stream_urls.extend([
         {
             "url": fmt.get("url"),
@@ -414,7 +478,7 @@ def extract_invidious_streams(v_data: Dict[str, Any]) -> Dict[str, List]:
             "format": "webm/videoOnly",
             "audioUrl": audio_url,
         }
-        for fmt in adaptive 
+        for fmt in adaptive
         if "video" in fmt.get("type", "") and "webm" in fmt.get("container", "")
     ])
 
@@ -430,9 +494,9 @@ def process_comments(comment_data: Any) -> List[Dict[str, Any]]:
         return []
 
     if (
-        isinstance(comment_data, dict) and
-        comment_data.get("success") is True and
-        isinstance(comment_data.get("comments"), list)
+        isinstance(comment_data, dict)
+        and comment_data.get("success") is True
+        and isinstance(comment_data.get("comments"), list)
     ):
         return normalize_sennin_comments(comment_data)
 
@@ -441,16 +505,14 @@ def process_comments(comment_data: Any) -> List[Dict[str, Any]]:
         if isinstance(comment_data, dict)
         else (comment_data if isinstance(comment_data, list) else [])
     )
-    
+
     processed = []
     for c in comments:
         if not isinstance(c, dict):
             continue
-        
-        processed_comment = _normalize_comment(c)
-        if processed_comment:
-            processed.append(processed_comment)
-
+        normalized = _normalize_comment(c)
+        if normalized:
+            processed.append(normalized)
     return processed
 
 
@@ -459,13 +521,13 @@ def _normalize_comment(comment: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     author_obj = item.get("author")
     author_icon = ""
-    
+
     if isinstance(author_obj, dict):
         item["author"] = author_obj.get("name", "")
         author_icon = (
-            author_obj.get("avatar") or
-            author_obj.get("authorIcon") or
-            item.get("avatar", "")
+            author_obj.get("avatar")
+            or author_obj.get("authorIcon")
+            or item.get("avatar", "")
         )
         item["authorId"] = author_obj.get("channelId", "")
     else:
@@ -478,10 +540,9 @@ def _normalize_comment(comment: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     item["avatar"] = item["authorIcon"]
 
     if not isinstance(item.get("authorThumbnails"), list):
-        if item["authorIcon"]:
-            item["authorThumbnails"] = [{"url": item["authorIcon"]}]
-        else:
-            item["authorThumbnails"] = []
+        item["authorThumbnails"] = (
+            [{"url": item["authorIcon"]}] if item["authorIcon"] else []
+        )
 
     text_str = item.get("text") or item.get("content") or ""
     if "contentHtml" not in item:
@@ -489,7 +550,11 @@ def _normalize_comment(comment: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if "content" not in item:
         item["content"] = text_str
 
-    pub_time = item.get("publishedTime") or item.get("published") or item.get("publishedText", "")
+    pub_time = (
+        item.get("publishedTime")
+        or item.get("published")
+        or item.get("publishedText", "")
+    )
     item["publishedTime"] = pub_time
     item["publishedText"] = pub_time
 
@@ -513,9 +578,15 @@ def normalize_sennin_comments(sennin_data: Dict[str, Any]) -> List[Dict[str, Any
         if not isinstance(c, dict):
             continue
 
-        author_info = c.get("author", {}) if isinstance(c.get("author"), dict) else {}
-        likes_info = c.get("likes", {}) if isinstance(c.get("likes"), dict) else {}
-        replies_info = c.get("replies", {}) if isinstance(c.get("replies"), dict) else {}
+        author_info = (
+            c.get("author", {}) if isinstance(c.get("author"), dict) else {}
+        )
+        likes_info = (
+            c.get("likes", {}) if isinstance(c.get("likes"), dict) else {}
+        )
+        replies_info = (
+            c.get("replies", {}) if isinstance(c.get("replies"), dict) else {}
+        )
 
         author_name = author_info.get("name") or (
             c.get("author") if isinstance(c.get("author"), str) else ""
@@ -536,38 +607,57 @@ def normalize_sennin_comments(sennin_data: Dict[str, Any]) -> List[Dict[str, Any
             "publishedTime": c.get("publishedTime", ""),
             "publishedText": c.get("publishedTime", ""),
             "likeCount": (
-                likes_info.get("count") if isinstance(likes_info, dict)
+                likes_info.get("count")
+                if isinstance(likes_info, dict)
                 else c.get("likes", 0)
             ),
             "replyCount": (
-                replies_info.get("count") if isinstance(replies_info, dict)
+                replies_info.get("count")
+                if isinstance(replies_info, dict)
                 else c.get("replies", 0)
             ),
-            "isCreator": author_info.get("creator", False) if isinstance(author_info, dict) else False,
-            "isVerified": author_info.get("verified", False) if isinstance(author_info, dict) else False,
+            "isCreator": (
+                author_info.get("creator", False)
+                if isinstance(author_info, dict)
+                else False
+            ),
+            "isVerified": (
+                author_info.get("verified", False)
+                if isinstance(author_info, dict)
+                else False
+            ),
         })
 
     return processed
 
+
+# ─────────────────────────────────────────────
+#  ルーター
+# ─────────────────────────────────────────────
 
 @router.get("/shorts/{v}", response_class=HTMLResponse)
 async def shorts_player(
     request: Request,
     v: str,
     force_instance: Optional[str] = Query(None),
+    # info_api: 情報取得API, stream_api: ストリームAPI を個別に指定可能
+    info_api: Optional[str] = Query(None, alias="info_api"),
+    stream_api: Optional[str] = Query(None, alias="stream_api"),
+    # 後方互換: ?api= で両方を一括指定
     api: Optional[str] = Query(None),
 ):
+    # info_api / stream_api を優先、なければ共通 api を使う
+    resolved_info_api = info_api or api or None
+    resolved_stream_api = stream_api or api or None
+
     try:
         from app.stream import fetch_fastest_stream_urls, fetch_comments
-        
-        tasks = (
-            fetch_video_info(v, force_instance=force_instance, api=api),
-            fetch_fastest_stream_urls(v, api=api, force_instance=force_instance),
-            fetch_comments(v, force_instance=force_instance, api=api),
-        )
 
         video_data, stream_data, comment_data = await asyncio.gather(
-            *tasks, return_exceptions=True
+            fetch_video_info(v, force_instance=force_instance, api=resolved_info_api),
+            fetch_fastest_stream_urls(v, api=resolved_stream_api, force_instance=force_instance),
+            fetch_comments(v, force_instance=force_instance, api=resolved_info_api),
+            return_exceptions=True,
         )
 
         if isinstance(video_data, Exception) and isinstance(stream_data, Exception):
@@ -578,11 +668,9 @@ async def shorts_player(
 
         video_urls = s_data.get("videoUrls", [])
         if not video_urls and v_data:
-            invidious_streams = extract_invidious_streams(v_data)
-            video_urls = invidious_streams.get("videoUrls", [])
+            video_urls = extract_invidious_streams(v_data).get("videoUrls", [])
 
         formatted_comments = process_comments(comment_data)
-
         info_api_used = v_data.get("api_used", "unknown")
         stream_api_used = s_data.get("stream_api_used", "unknown")
 
@@ -597,8 +685,8 @@ async def shorts_player(
                 "view_count": v_data.get("viewCount", 0),
                 "like_count": v_data.get("likeCount", 0),
                 "description": (
-                    v_data.get("descriptionHtml") or
-                    v_data.get("description", "").replace("\n", "<br>")
+                    v_data.get("descriptionHtml")
+                    or v_data.get("description", "").replace("\n", "<br>")
                 ),
                 "comments": formatted_comments,
                 "info_api_used": info_api_used,
@@ -606,15 +694,13 @@ async def shorts_player(
                 "api_used": info_api_used,
             },
         )
-    
+
     except httpx.TimeoutException:
         logger.error(f"Timeout in shorts_player for video {v}")
         return templates.TemplateResponse("apitimeout.html", {"request": request})
     except Exception as e:
         logger.error(f"Error in shorts_player for video {v}: {e}")
-        fallback_instances = await get_invidious_instances_from_url(
-            INVIDIOUS_VIDEO_LIST_URL
-        )
+        fallback_instances = await get_invidious_instances_from_url(INVIDIOUS_VIDEO_LIST_URL)
         return templates.TemplateResponse(
             "apiallerror.html",
             {"request": request, "instances": fallback_instances},
@@ -627,22 +713,25 @@ async def watch(
     v: str = Query(...),
     list: Optional[str] = Query(None),
     force_instance: Optional[str] = Query(None),
+    # info_api / stream_api を個別指定可能
+    info_api: Optional[str] = Query(None, alias="info_api"),
+    stream_api: Optional[str] = Query(None, alias="stream_api"),
+    # 後方互換
     api: Optional[str] = Query(None),
 ):
+    resolved_info_api = info_api or api or None
+    resolved_stream_api = stream_api or api or None
+
     try:
         from app.stream import fetch_fastest_stream_urls, fetch_comments
-        
-        info_task = fetch_video_info(v, force_instance=force_instance, api=api)
-        stream_task = fetch_fastest_stream_urls(v, api=api, force_instance=force_instance)
-        comment_task = fetch_comments(v, force_instance=force_instance, api=api)
 
-        async def _fetch_playlist():
+        async def _fetch_playlist() -> Optional[Dict[str, Any]]:
             if not list:
                 return None
             try:
                 res = await asyncio.wait_for(
                     fetch_invidious(f"/playlists/{list}", force_instance=force_instance),
-                    timeout=4.0
+                    timeout=4.0,
                 )
                 if isinstance(res, dict) and not res.get("error"):
                     return res
@@ -650,10 +739,12 @@ async def watch(
                 logger.debug(f"Playlist error: {e}")
             return None
 
-        playlist_task = _fetch_playlist()
-
         video_data, stream_res, comment_data, playlist_data = await asyncio.gather(
-            info_task, stream_task, comment_task, playlist_task, return_exceptions=True
+            fetch_video_info(v, force_instance=force_instance, api=resolved_info_api),
+            fetch_fastest_stream_urls(v, api=resolved_stream_api, force_instance=force_instance),
+            fetch_comments(v, force_instance=force_instance, api=resolved_info_api),
+            _fetch_playlist(),
+            return_exceptions=True,
         )
 
         if isinstance(video_data, Exception) and isinstance(stream_res, Exception):
@@ -663,41 +754,45 @@ async def watch(
         s_data = stream_res if isinstance(stream_res, dict) else {}
         p_data = playlist_data if isinstance(playlist_data, dict) else {}
 
-        playlist_videos = []
-        for item in p_data.get("videos", []):
-            if isinstance(item, dict):
-                playlist_videos.append({
-                    "videoId": item.get("videoId"),
-                    "title": item.get("title"),
-                    "author": item.get("author")
-                })
+        # プレイリスト動画
+        playlist_videos = [
+            {
+                "videoId": item.get("videoId"),
+                "title": item.get("title"),
+                "author": item.get("author"),
+            }
+            for item in p_data.get("videos", [])
+            if isinstance(item, dict)
+        ]
 
+        # ストリーム URL
         stream_urls = s_data.get("streamUrls", [])
         video_urls = s_data.get("videoUrls", [])
-
         if not stream_urls and v_data:
             invidious_streams = extract_invidious_streams(v_data)
             stream_urls = invidious_streams.get("streamUrls", [])
             video_urls = invidious_streams.get("videoUrls", [])
 
-        recommended = []
-        for rec in v_data.get("recommendedVideos", []):
-            if isinstance(rec, dict):
-                recommended.append({
-                    "video_id": rec.get("video_id") or rec.get("videoId"),
-                    "title": rec.get("title"),
-                    "author": rec.get("author"),
-                    "view_count_text": rec.get("view_count_text") or rec.get("viewCountText"),
-                    "thumbnail": rec.get("thumbnail", ""),
-                })
+        # おすすめ動画
+        recommended = [
+            {
+                "video_id": rec.get("video_id") or rec.get("videoId"),
+                "title": rec.get("title"),
+                "author": rec.get("author"),
+                "view_count_text": rec.get("view_count_text") or rec.get("viewCountText"),
+                "thumbnail": rec.get("thumbnail", ""),
+            }
+            for rec in v_data.get("recommendedVideos", [])
+            if isinstance(rec, dict)
+        ]
 
-        author_icon = v_data.get("authorIcon")
+        # チャンネルアイコン
+        author_icon = v_data.get("authorIcon") or ""
         if not author_icon:
             author_thumbs = v_data.get("authorThumbnails", [])
             author_icon = author_thumbs[-1]["url"] if author_thumbs else ""
 
         formatted_comments = process_comments(comment_data)
-
         info_api_used = v_data.get("api_used", "unknown")
         stream_api_used = s_data.get("stream_api_used", "unknown")
 
@@ -716,9 +811,9 @@ async def watch(
                 "view_count": v_data.get("viewCount", s_data.get("viewCount", 0)),
                 "like_count": v_data.get("likeCount", s_data.get("likeCount", 0)),
                 "description": (
-                    v_data.get("descriptionHtml") or
-                    s_data.get("descriptionHtml") or
-                    v_data.get("description", "").replace("\n", "<br>")
+                    v_data.get("descriptionHtml")
+                    or s_data.get("descriptionHtml")
+                    or v_data.get("description", "").replace("\n", "<br>")
                 ),
                 "recommended_videos": recommended,
                 "comments": formatted_comments,
@@ -732,22 +827,19 @@ async def watch(
             },
         )
 
+        # 視聴履歴をCookieに保存
         try:
             history_json = request.cookies.get("history", "[]")
             history = json.loads(history_json)
-            
             history = [item for item in history if item.get("videoId") != v]
-            
             history.append({
                 "videoId": v,
                 "title": v_data.get("title", ""),
                 "author": v_data.get("author", ""),
                 "added_at": datetime.now().isoformat(),
             })
-            
             if len(history) > 50:
                 history = history[-50:]
-            
             response.set_cookie(
                 key="history",
                 value=json.dumps(history),
@@ -765,9 +857,7 @@ async def watch(
         return templates.TemplateResponse("apitimeout.html", {"request": request})
     except Exception as e:
         logger.error(f"Error in watch for video {v}: {e}")
-        fallback_instances = await get_invidious_instances_from_url(
-            INVIDIOUS_VIDEO_LIST_URL
-        )
+        fallback_instances = await get_invidious_instances_from_url(INVIDIOUS_VIDEO_LIST_URL)
         return templates.TemplateResponse(
             "apiallerror.html",
             {"request": request, "instances": fallback_instances},
@@ -780,4 +870,4 @@ async def get_api_stats():
         return {
             "stats": dict(_API_STATS),
             "timestamp": datetime.now().isoformat(),
-            }
+        }
