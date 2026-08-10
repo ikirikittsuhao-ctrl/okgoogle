@@ -331,17 +331,6 @@
         border: 1px solid var(--yt-spec-border-color);
     }
 
-    .yt-api-badge-detail {
-        font-size: 0.7rem;
-        color: var(--yt-spec-text-secondary);
-        background: rgba(255, 255, 255, 0.05);
-        padding: 4px 6px;
-        border-radius: 3px;
-        border: 1px solid var(--yt-spec-border-color);
-        margin-top: 4px;
-        display: inline-block;
-    }
-
     .yt-description-body {
         white-space: pre-wrap;
         word-break: break-word;
@@ -487,16 +476,6 @@
         background: var(--yt-spec-button-chip-hover);
     }
 
-    .yt-dropdown-header {
-        padding: 10px 16px;
-        font-size: 0.8rem;
-        font-weight: 600;
-        color: var(--yt-spec-text-secondary);
-        background: rgba(255, 255, 255, 0.05);
-        border-bottom: 1px solid var(--yt-spec-border-color);
-        text-align: left;
-    }
-
     .yt-dropdown-section {
         padding: 8px 0;
         border-bottom: 1px solid var(--yt-spec-border-color);
@@ -609,15 +588,12 @@
         background: rgba(45, 18, 18, 0.95);
     }
 
+    /* Floating trigger & Control Panel Styles */
     #floating-control {
         position: fixed;
         bottom: 24px;
         right: 24px;
         z-index: 2500;
-        display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        gap: 8px;
     }
 
     .yt-control-trigger {
@@ -638,36 +614,77 @@
 
     .yt-control-trigger:hover { transform: scale(1.05); }
 
-    .yt-control-menu {
-        background: var(--yt-spec-static-overlay-background-solid);
-        border: 1px solid var(--yt-spec-border-color);
-        padding: 8px;
-        border-radius: 12px;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    #controlPanel {
         display: none;
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 440px;
+        height: 520px;
+        background: #181818;
+        border: 1px solid var(--yt-spec-border-color);
+        border-radius: 16px;
+        z-index: 2600;
+        box-shadow: 0 12px 40px rgba(0,0,0,.7);
+        overflow: hidden;
         flex-direction: column;
-        gap: 4px;
-        min-width: 200px;
+        opacity: 0;
+        transform: translateY(20px) scale(0.95);
+        transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1), transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        pointer-events: none;
     }
 
-    .yt-control-item {
+    #controlPanel.open {
         display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 8px 12px;
-        border-radius: 8px;
-        cursor: pointer;
-        font-size: 0.85rem;
+        opacity: 1;
+        transform: translateY(0) scale(1);
+        pointer-events: auto;
     }
 
-    .yt-control-item:hover, .yt-control-item.active {
-        background: var(--yt-spec-button-chip-hover);
-    }
+    .cp-header { display: flex; align-items: center; padding: 14px 16px 0; gap: 8px; flex-shrink: 0; }
+    .cp-title { font-size: 16px; font-weight: 600; flex: 1; color: #fff; }
+    .cp-close { background: none; border: none; color: #aaa; font-size: 24px; cursor: pointer; line-height: 1; }
+    .cp-close:hover { color: #fff; }
 
-    .yt-source-options { display: none; flex-direction: column; gap: 2px; padding-left: 8px; }
-    .yt-source-options.show { display: flex; }
-    .yt-sub-item { font-size: 0.8rem; padding: 6px 10px; border-radius: 6px; cursor: pointer; text-align: left; }
-    .yt-sub-item.selected { background: var(--yt-brand-red); color: white; }
+    .cp-tabs { display: flex; gap: 4px; padding: 10px 16px 0; flex-shrink: 0; }
+    .cp-tab { padding: 8px 16px; border-radius: 20px; border: none; background: #272727; color: #aaa; font-size: 14px; cursor: pointer; transition: background 0.15s, color 0.15s; }
+    .cp-tab.active { background: #fff; color: #0f0f0f; font-weight: 600; }
+
+    .cp-slide-wrap { flex: 1; overflow: hidden; position: relative; }
+    .cp-slide-track { display: flex; height: 100%; transition: transform 0.25s cubic-bezier(0.4,0,0.2,1); }
+    .cp-slide-page { min-width: 100%; height: 100%; overflow-y: auto; padding: 14px 16px 18px; box-sizing: border-box; }
+
+    .cp-card { background: #272727; border-radius: 12px; padding: 14px; margin-bottom: 10px; }
+    .cp-card-title { font-size: 12px; color: #aaa; margin-bottom: 10px; text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
+
+    .cp-btn { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 11px 14px; border-radius: 10px; border: none; background: #3f3f3f; color: #fff; font-size: 15px; cursor: pointer; margin-bottom: 8px; text-align: left; }
+    .cp-btn:hover { background: #555; }
+    .cp-btn-left { display: flex; align-items: center; gap: 10px; }
+    .cp-btn:last-child { margin-bottom: 0; }
+
+    .cp-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; font-size: 15px; color: #fff; }
+    .cp-toggle-row + .cp-toggle-row { border-top: 1px solid #3a3a3a; }
+
+    .toggle-switch { position: relative; width: 46px; height: 26px; flex-shrink: 0; }
+    .toggle-switch input { opacity: 0; width: 0; height: 0; }
+    .toggle-switch .slider { position: absolute; inset: 0; background: #555; border-radius: 26px; cursor: pointer; transition: background 0.2s; }
+    .toggle-switch .slider:before { content: ""; position: absolute; width: 20px; height: 20px; left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: transform 0.2s; }
+    .toggle-switch input:checked + .slider { background: #1a73e8; }
+    .toggle-switch input:checked + .slider:before { transform: translateX(20px); }
+
+    .cp-select { width: 100%; padding: 10px 12px; border-radius: 10px; background: #3f3f3f; color: #fff; border: 1px solid transparent; font-size: 14px; margin-bottom: 8px; outline: none; }
+    .cp-select:focus { border-color: #1a73e8; }
+
+    .cp-mode-card { display: flex; align-items: flex-start; gap: 12px; background: #272727; border-radius: 12px; padding: 14px; margin-bottom: 8px; cursor: pointer; border: 2px solid transparent; transition: border-color 0.15s, background-color 0.15s; }
+    .cp-mode-card:hover { background: #303030; }
+    .cp-mode-card.selected { border-color: #1a73e8; }
+    .cp-mode-card input[type=radio] { margin-top: 2px; flex-shrink: 0; accent-color: #1a73e8; width: 16px; height: 16px; }
+    .cp-mode-title { font-size: 15px; font-weight: 600; margin-bottom: 4px; color: #fff; }
+    .cp-mode-desc { font-size: 13px; color: #aaa; line-height: 1.5; }
+
+    @media (max-width: 900px) {
+        #controlPanel { width: calc(100vw - 32px); right: 16px; bottom: 16px; height: 480px; }
+    }
 
     .yt-api-status {
         display: inline-block;
@@ -682,17 +699,9 @@
     .yt-api-status.loading { background: #FFC107; animation: pulse-loading 1s ease-in-out infinite; }
     .yt-api-status.error { background: #F44336; }
 
-    @keyframes pulse-status {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.6; }
-    }
+    @keyframes pulse-status { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+    @keyframes pulse-loading { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-    @keyframes pulse-loading {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.3; }
-    }
-
-    /* プレイリストパネル用スタイル */
     .yt-playlist-panel {
         background-color: var(--yt-spec-badge-chip-background);
         border: 1px solid var(--yt-spec-border-color);
@@ -831,56 +840,112 @@
         </div>
     </div>
 
+    <!-- Floating Trigger & Control Panel UI -->
     <div id="floating-control">
-        <div class="yt-control-menu" id="ctrlMenu">
-            <div class="yt-control-item" onclick="toggleLoop(this)">
-                <span>ループ再生</span><i class="fas fa-redo"></i>
-            </div>
-            <div class="yt-control-item" onclick="toggleMute(this)">
-                <span>音声ミュート</span><i class="fas fa-volume-mute"></i>
-            </div>
-            <div class="yt-control-item" onclick="openQualityFromCtrl()">
-                <span>画質選択</span><i class="fas fa-sliders-h"></i>
-            </div>
-            <div class="yt-control-item" id="sourceToggle" onclick="toggleSourceOptions()">
-                <span>YouTube切替</span><i class="fab fa-youtube"></i>
-            </div>
-            <div class="yt-source-options" id="srcOpts">
-                <div class="yt-sub-item" id="src-nocookie" onclick="setExternalSource('nocookie')">NoCookie</div>
-                <div class="yt-sub-item" id="src-edu" onclick="setExternalSource('edu')">Education</div>
-                <div class="yt-sub-item selected" id="src-stream" onclick="setExternalSource('stream')">Stream (デフォルト)</div>
-            </div>
-            <div class="yt-control-item" id="streamApiToggle" onclick="toggleStreamApiOptions()">
-                <span>Stream取得API切替</span><i class="fas fa-play-circle"></i>
-            </div>
-            <div class="yt-source-options" id="streamApiOpts">
-                <div class="yt-sub-item selected" id="stream-api-default" onclick="selectStreamApi('default')">デフォルト API</div>
-                <div class="yt-sub-item" id="stream-api-sia" onclick="selectStreamApi('sia')">Sia API</div>
-                <div class="yt-sub-item" id="stream-api-piped" onclick="selectStreamApi('piped')">Piped API</div>
-                <div class="yt-sub-item" id="stream-api-invidious" onclick="selectStreamApi('invidious')">Invidious API</div>
-                <div class="yt-sub-item" id="stream-api-rapidapi" onclick="selectStreamApi('rapidapi')">RapidAPI</div>
-                <div class="yt-sub-item" id="stream-api-zernio" onclick="selectStreamApi('zernio')">Zernio API</div>
-                <div class="yt-sub-item" id="stream-api-sennin" onclick="selectStreamApi('sennin')">Sennin API</div>
-            </div>
-            <div class="yt-control-item" id="apiToggle" onclick="toggleApiOptions()">
-                <span>使用API切替</span><i class="fas fa-server"></i>
-            </div>
-            <div class="yt-source-options" id="apiOpts">
-                <div class="yt-sub-item selected" id="api-default" onclick="selectApi('default')">デフォルト API</div>
-                <div class="yt-sub-item" id="api-invidious" onclick="selectApi('invidious')">Invidious API</div>
-                <div class="yt-sub-item" id="api-sia" onclick="selectApi('sia')">Sia API</div>
-                <div class="yt-sub-item" id="api-sennin" onclick="selectApi('sennin')">Sennin API</div>
-                {% if available_apis %}
-                    {% for api in available_apis %}
-                    <div class="yt-sub-item" id="api-{{ api.id }}" onclick="selectApi('{{ api.id }}')">{{ api.name }}</div>
-                    {% endfor %}
-                {% else %}
-                    <div class="yt-sub-item" id="api-piped" onclick="selectApi('piped')">Piped API</div>
-                {% endif %}
-            </div>
-        </div>
-        <div class="yt-control-trigger" onclick="toggleControlMenu()">
+        <div class="yt-control-trigger" onclick="toggleControlPanel()">
             <i class="fas fa-cog"></i>
+        </div>
+    </div>
+
+    <div id="controlPanel">
+        <div class="cp-header">
+            <div class="cp-title">コントロールパネル</div>
+            <button class="cp-close" onclick="toggleControlPanel()">&times;</button>
+        </div>
+        <div class="cp-tabs">
+            <button class="cp-tab active" onclick="switchCpTab(0)">再生</button>
+            <button class="cp-tab" onclick="switchCpTab(1)">ソース</button>
+            <button class="cp-tab" onclick="switchCpTab(2)">API</button>
+        </div>
+        <div class="cp-slide-wrap">
+            <div class="cp-slide-track" id="cpSlideTrack">
+                <!-- Tab 1: 再生設定 -->
+                <div class="cp-slide-page">
+                    <div class="cp-card">
+                        <div class="cp-card-title">プレイヤーコントロール</div>
+                        <div class="cp-toggle-row">
+                            <span>ループ再生</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="cpLoopToggle" onchange="toggleLoopSwitch(this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="cp-toggle-row">
+                            <span>音声ミュート</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="cpMuteToggle" onchange="toggleMuteSwitch(this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="cp-card">
+                        <div class="cp-card-title">画質設定</div>
+                        <button class="cp-btn" onclick="openQualityDropdownFromCp()">
+                            <span class="cp-btn-left"><i class="fas fa-sliders-h"></i> <span id="cpCurrentQualityText">画質を選択...</span></span>
+                            <i class="fas fa-chevron-right" style="font-size:12px; color:#aaa;"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tab 2: ソース切替 -->
+                <div class="cp-slide-page">
+                    <div class="cp-card-title" style="margin-bottom:8px;">埋め込み・再生モード</div>
+                    <div class="cp-mode-card selected" id="cp-mode-card-stream" onclick="selectSourceMode('stream')">
+                        <input type="radio" name="srcMode" id="cp-src-stream" checked>
+                        <div>
+                            <div class="cp-mode-title">Stream (デフォルト)</div>
+                            <div class="cp-mode-desc">標準のストリーミングプレイヤーで再生します。</div>
+                        </div>
+                    </div>
+                    <div class="cp-mode-card" id="cp-mode-card-nocookie" onclick="selectSourceMode('nocookie')">
+                        <input type="radio" name="srcMode" id="cp-src-nocookie">
+                        <div>
+                            <div class="cp-mode-title">YouTube NoCookie</div>
+                            <div class="cp-mode-desc">youtube-nocookie.com の埋め込みプレイヤーを使用します。</div>
+                        </div>
+                    </div>
+                    <div class="cp-mode-card" id="cp-mode-card-edu" onclick="selectSourceMode('edu')">
+                        <input type="radio" name="srcMode" id="cp-src-edu">
+                        <div>
+                            <div class="cp-mode-title">YouTube Education</div>
+                            <div class="cp-mode-desc">標準のYouTube Embedプレーヤーを使用します。</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tab 3: API設定 -->
+                <div class="cp-slide-page">
+                    <div class="cp-card">
+                        <div class="cp-card-title">ストリーム取得 API</div>
+                        <select class="cp-select" id="cpStreamApiSelect" onchange="applyStreamApiChange(this.value)">
+                            <option value="default">デフォルト API</option>
+                            <option value="sia">Sia API</option>
+                            <option value="piped">Piped API</option>
+                            <option value="invidious">Invidious API</option>
+                            <option value="rapidapi">RapidAPI</option>
+                            <option value="zernio">Zernio API</option>
+                            <option value="sennin">Sennin API</option>
+                        </select>
+                    </div>
+
+                    <div class="cp-card">
+                        <div class="cp-card-title">情報取得 API</div>
+                        <select class="cp-select" id="cpInfoApiSelect" onchange="applyInfoApiChange(this.value)">
+                            <option value="default">デフォルト API</option>
+                            <option value="invidious">Invidious API</option>
+                            <option value="sia">Sia API</option>
+                            <option value="sennin">Sennin API</option>
+                            {% if available_apis %}
+                                {% for api in available_apis %}
+                                <option value="{{ api.id }}">{{ api.name }}</option>
+                                {% endfor %}
+                            {% else %}
+                                <option value="piped">Piped API</option>
+                            {% endif %}
+                        </select>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1343,9 +1408,18 @@
         document.getElementById('qualitySelect').classList.remove('open');
     }
 
-    document.addEventListener('click', () => {
-        document.getElementById('qualitySelect').classList.remove('open');
-        document.getElementById('apiInfoSelect').classList.remove('open');
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#qualitySelect')) {
+            document.getElementById('qualitySelect').classList.remove('open');
+        }
+        if (!e.target.closest('#apiInfoSelect')) {
+            document.getElementById('apiInfoSelect').classList.remove('open');
+        }
+        const panel = document.getElementById('controlPanel');
+        const trigger = document.querySelector('.yt-control-trigger');
+        if (panel.classList.contains('open') && !panel.contains(e.target) && !trigger.contains(e.target)) {
+            toggleControlPanel();
+        }
     });
 
     // ========== 画質選択ロジック ==========
@@ -1358,7 +1432,9 @@
             const audioUrl = this.getAttribute('data-audio');
             const type = this.getAttribute('data-type');
             
-            document.getElementById('qualityLabel').innerText = "画質: " + this.innerText.trim();
+            const qualityText = "画質: " + this.innerText.trim();
+            document.getElementById('qualityLabel').innerText = qualityText;
+            document.getElementById('cpCurrentQualityText').innerText = this.innerText.trim();
             changeSource(videoUrl, audioUrl, type);
         });
     });
@@ -1396,46 +1472,50 @@
         video.play();
     }
 
-    // ========== フローティングコントロール操作 ==========
-    function toggleControlMenu() {
-        const menu = document.getElementById('ctrlMenu');
-        menu.style.display = (menu.style.display === 'flex') ? 'none' : 'flex';
+    // ========== 新コントロールパネル（モダンUI）制御 ==========
+    function toggleControlPanel() {
+        const panel = document.getElementById('controlPanel');
+        panel.classList.toggle('open');
     }
 
-    function toggleLoop(el) {
-        video.loop = !video.loop;
-        el.classList.toggle('active', video.loop);
+    function switchCpTab(idx) {
+        const tabs = document.querySelectorAll('.cp-tab');
+        tabs.forEach((tab, i) => {
+            tab.classList.toggle('active', i === idx);
+        });
+        const track = document.getElementById('cpSlideTrack');
+        track.style.transform = `translateX(-${idx * 100}%)`;
+    }
+
+    function toggleLoopSwitch(checked) {
+        video.loop = checked;
         showAlert(video.loop ? "ループ再生をONにしました" : "ループ再生をOFFにしました", 1500);
     }
 
-    function toggleMute(el) {
-        video.muted = !video.muted;
-        audio.muted = video.muted;
-        el.classList.toggle('active', video.muted);
+    function toggleMuteSwitch(checked) {
+        video.muted = checked;
+        audio.muted = checked;
         showAlert(video.muted ? "ミュートにしました" : "ミュートを解除しました", 1500);
     }
 
-    function openQualityFromCtrl() {
+    function openQualityDropdownFromCp() {
+        toggleControlPanel();
         document.getElementById('qualitySelect').classList.add('open');
     }
 
-    function toggleSourceOptions() {
-        document.getElementById('srcOpts').classList.toggle('show');
-    }
+    function selectSourceMode(mode) {
+        document.querySelectorAll('.cp-mode-card').forEach(card => card.classList.remove('selected'));
+        const selectedCard = document.getElementById(`cp-mode-card-${mode}`);
+        if (selectedCard) selectedCard.classList.add('selected');
+        
+        const radio = document.getElementById(`cp-src-${mode}`);
+        if (radio) radio.checked = true;
 
-    function toggleStreamApiOptions() {
-        document.getElementById('streamApiOpts').classList.toggle('show');
-    }
-
-    function toggleApiOptions() {
-        document.getElementById('apiOpts').classList.toggle('show');
+        localStorage.setItem('pref_embed_mode', mode);
+        setExternalSource(mode);
     }
 
     function setExternalSource(mode) {
-        document.querySelectorAll('#srcOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
-        const targetElem = document.getElementById(`src-${mode}`);
-        if (targetElem) targetElem.classList.add('selected');
-
         if (mode === 'stream') {
             iframeContainer.style.display = 'none';
             iframeContainer.innerHTML = '';
@@ -1460,17 +1540,20 @@
         }
     }
 
-    // ========== API選択ロジック（改善版） ==========
+    function applyStreamApiChange(apiId) {
+        selectStreamApi(apiId);
+    }
+
+    function applyInfoApiChange(apiId) {
+        selectApi(apiId);
+    }
+
     function selectStreamApi(apiId) {
         const validApis = ['default', 'sia', 'piped', 'invidious', 'rapidapi', 'zernio', 'sennin'];
         if (!validApis.includes(apiId)) {
             showAlert('無効なAPI選択です', 2000, true);
             return;
         }
-
-        document.querySelectorAll('#streamApiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
-        const selectedElem = document.getElementById(`stream-api-${apiId}`);
-        if (selectedElem) selectedElem.classList.add('selected');
 
         localStorage.setItem('selected_stream_api', apiId);
         
@@ -1491,10 +1574,6 @@
             showAlert('無効なAPI選択です', 2000, true);
             return;
         }
-
-        document.querySelectorAll('#apiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
-        const selectedElem = document.getElementById(`api-${apiId}`);
-        if (selectedElem) selectedElem.classList.add('selected');
 
         localStorage.setItem('selected_api', apiId);
         
@@ -1518,23 +1597,25 @@
         // チャンネル登録状態の確認
         checkSubscribeStatus(authorId);
 
-        // API選択状態を復元
-        document.querySelectorAll('#apiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
-        const activeApiElem = document.getElementById(`api-${currentInfoApi}`);
-        if (activeApiElem) activeApiElem.classList.add('selected');
+        // API選択状態（Select要素）を復元
+        const streamSelect = document.getElementById('cpStreamApiSelect');
+        if (streamSelect) streamSelect.value = currentStreamApi;
 
-        document.querySelectorAll('#streamApiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
-        const activeStreamApiElem = document.getElementById(`stream-api-${currentStreamApi}`);
-        if (activeStreamApiElem) activeStreamApiElem.classList.add('selected');
+        const infoSelect = document.getElementById('cpInfoApiSelect');
+        if (infoSelect) infoSelect.value = currentInfoApi;
+
+        // プレイヤー状態の同期
+        document.getElementById('cpLoopToggle').checked = video.loop;
+        document.getElementById('cpMuteToggle').checked = video.muted;
 
         // ユーザー設定の埋め込み再生モードを復元
         const preferredEmbedMode = localStorage.getItem('pref_embed_mode') || 'stream';
-        setExternalSource(preferredEmbedMode);
+        selectSourceMode(preferredEmbedMode);
 
         // API情報表示を更新
         updateApiDisplay();
 
-        // 推奨ビデオのプリロード（高速化）
+        // 推奨ビデオのプリロード
         const thumbs = document.querySelectorAll('.yt-recommend-thumb');
         thumbs.forEach(thumb => {
             thumb.loading = 'lazy';
@@ -1542,7 +1623,6 @@
     });
 
     // ========== パフォーマンス最適化 ==========
-    // IntersectionObserver を使用した遅延ロード
     if ('IntersectionObserver' in window) {
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
