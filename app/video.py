@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from app.stream_production import fetch_fastest_stream_urls, fetch_comments
+from app.stream import fetch_fastest_stream_urls, fetch_comments
 from app.search import (
     fetch_invidious,
     fetch_with_inflight,
