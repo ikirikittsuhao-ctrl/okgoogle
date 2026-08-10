@@ -46,8 +46,8 @@
 
     .yt-watch-page-container {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 402px;
-        gap: 24px;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 12px;
         max-width: 1754px;
         margin: 0 auto;
         padding: 12px 24px 0 24px;
@@ -56,7 +56,7 @@
 
     @media (max-width: 1200px) {
         .yt-watch-page-container {
-            grid-template-columns: minmax(0, 1fr) 350px;
+            grid-template-columns: minmax(0, 1fr) 320px;
             padding: 8px 16px 0 16px;
         }
     }
@@ -558,17 +558,55 @@
 
     #custom-alert {
         position: fixed;
-        bottom: 24px;
-        left: 24px;
-        background: var(--yt-spec-static-overlay-background-solid);
+        top: 24px;
+        right: 24px;
+        background: rgba(24, 24, 27, 0.95);
         color: var(--yt-spec-text-primary);
-        padding: 12px 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+        padding: 18px 24px;
+        border-radius: 16px;
+        box-shadow: 0 16px 36px rgba(0, 0, 0, 0.6), 0 4px 12px rgba(0, 0, 0, 0.4);
         z-index: 4000;
-        display: none;
-        font-size: 0.875rem;
+        display: block;
+        font-size: 0.98rem;
+        font-weight: 600;
         border: 1px solid var(--yt-spec-border-color);
+        backdrop-filter: blur(12px);
+        transform: translateY(-20px) scale(0.92);
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease, visibility 0.3s step-end;
+        touch-action: pan-y;
+        user-select: none;
+        max-width: 400px;
+        width: calc(100% - 48px);
+        word-break: break-word;
+        box-sizing: border-box;
+    }
+
+    #custom-alert.show {
+        visibility: visible;
+        pointer-events: auto;
+        transform: translateY(0) scale(1);
+        opacity: 1;
+        transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.3s ease, visibility 0s;
+    }
+
+    #custom-alert.hiding {
+        visibility: visible;
+        pointer-events: none;
+        transform: translateY(-15px) scale(0.95);
+        opacity: 0;
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, visibility 0.3s step-end;
+    }
+
+    #custom-alert.swiping {
+        transition: none !important;
+    }
+
+    #custom-alert.error {
+        border: 2px solid #ff4d4d !important;
+        background: rgba(45, 18, 18, 0.95);
     }
 
     #floating-control {
@@ -877,7 +915,7 @@
                             <div class="skeleton-box skeleton-text" style="width: 80px; height: 12px; margin-top: 4px;"></div>
                         {% endif %}
                     </div>
-                    <button class="yt-subscribe-btn">チャンネル登録</button>
+                    <button class="yt-subscribe-btn" id="subscribe-btn" onclick="toggleSubscribe('{{ author_id }}')">チャンネル登録</button>
                 </div>
 
                 <div class="yt-actions-group">
@@ -1057,7 +1095,52 @@
     const audio = document.getElementById('audio-sync');
     const iframeContainer = document.getElementById('iframe-container');
     const videoId = "{{ videoid }}";
+    const authorId = "{{ author_id }}";
     let hlsInstance = null;
+
+    // ========== チャンネル登録トグル・状態管理機能 ==========
+    function toggleSubscribe(ucid) {
+        if (!ucid) return;
+
+        let subs = JSON.parse(
+            localStorage.getItem('subscribed_channels') || '[]'
+        );
+
+        const isSubscribed = subs.includes(ucid);
+
+        if (isSubscribed) {
+            subs = subs.filter(id => id !== ucid);
+        } else {
+            subs.push(ucid);
+        }
+
+        localStorage.setItem(
+            'subscribed_channels',
+            JSON.stringify(subs)
+        );
+
+        updateSubscribeState(!isSubscribed);
+    }
+
+    function updateSubscribeState(isSubscribed) {
+        const btn = document.getElementById('subscribe-btn');
+        if (!btn) return;
+        if (isSubscribed) {
+            btn.innerText = '登録済み';
+            btn.style.backgroundColor = 'var(--yt-spec-badge-chip-background)';
+            btn.style.color = 'var(--yt-spec-text-primary)';
+        } else {
+            btn.innerText = 'チャンネル登録';
+            btn.style.backgroundColor = 'var(--yt-spec-brand-subscribe-bg)';
+            btn.style.color = 'var(--yt-spec-brand-subscribe-text)';
+        }
+    }
+
+    function checkSubscribeStatus(ucid) {
+        if (!ucid) return;
+        const subs = JSON.parse(localStorage.getItem('subscribed_channels') || '[]');
+        updateSubscribeState(subs.includes(ucid));
+    }
 
     // ========== プレイリスト非表示処理 ==========
     function closePlaylist() {
@@ -1106,12 +1189,92 @@
     function openModal() { document.getElementById('dl-modal').style.display = 'flex'; }
     function closeModal() { document.getElementById('dl-modal').style.display = 'none'; }
     
-    function showAlert(text, duration = 3000) {
+    let alertTimeout = null;
+
+    function showAlert(text, duration = 3000, isError = false) {
         const el = document.getElementById('custom-alert');
+        const icon = document.getElementById('alert-icon');
         document.getElementById('alert-text').innerText = text;
-        el.style.display = 'block';
-        setTimeout(() => { el.style.display = 'none'; }, duration);
+
+        if (isError) {
+            el.classList.add('error');
+            icon.className = 'fas fa-exclamation-circle';
+            icon.style.color = '#ff4d4d';
+        } else {
+            el.classList.remove('error');
+            icon.className = 'fas fa-info-circle';
+            icon.style.color = '#4caf50';
+        }
+
+        el.style.transform = '';
+        el.style.opacity = '';
+        el.classList.remove('hiding');
+        el.classList.add('show');
+
+        if (alertTimeout) clearTimeout(alertTimeout);
+        alertTimeout = setTimeout(() => {
+            hideAlert();
+        }, duration);
     }
+
+    function hideAlert() {
+        const el = document.getElementById('custom-alert');
+        if (!el.classList.contains('show')) return;
+        el.classList.remove('show');
+        el.classList.add('hiding');
+        setTimeout(() => {
+            el.classList.remove('hiding');
+        }, 300);
+    }
+
+    // アラートの横スワイプ操作の実装
+    (function initSwipeableAlert() {
+        const el = document.getElementById('custom-alert');
+        let startX = 0;
+        let currentX = 0;
+        let isDragging = false;
+
+        function onStart(e) {
+            isDragging = true;
+            startX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+            el.classList.add('swiping');
+            if (alertTimeout) clearTimeout(alertTimeout);
+        }
+
+        function onMove(e) {
+            if (!isDragging) return;
+            currentX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+            const diffX = currentX - startX;
+            el.style.transform = `translateX(${diffX}px)`;
+            el.style.opacity = 1 - Math.abs(diffX) / 200;
+        }
+
+        function onEnd() {
+            if (!isDragging) return;
+            isDragging = false;
+            el.classList.remove('swiping');
+            const diffX = currentX - startX;
+            if (Math.abs(diffX) > 80) {
+                const flyOutX = diffX > 0 ? 300 : -300;
+                el.style.transform = `translateX(${flyOutX}px)`;
+                el.style.opacity = '0';
+                setTimeout(() => {
+                    hideAlert();
+                }, 200);
+            } else {
+                el.style.transform = '';
+                el.style.opacity = '';
+            }
+        }
+
+        el.addEventListener('touchstart', onStart, { passive: true });
+        el.addEventListener('touchmove', onMove, { passive: true });
+        el.addEventListener('touchend', onEnd);
+
+        el.addEventListener('mousedown', onStart);
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onEnd);
+    })();
 
     // ========== 概要欄のもっと見る・一部表示トグル機能 ==========
     function toggleDescription() {
@@ -1301,7 +1464,7 @@
     function selectStreamApi(apiId) {
         const validApis = ['default', 'sia', 'piped', 'invidious', 'rapidapi', 'zernio', 'sennin'];
         if (!validApis.includes(apiId)) {
-            showAlert('無効なAPI選択です', 2000);
+            showAlert('無効なAPI選択です', 2000, true);
             return;
         }
 
@@ -1325,7 +1488,7 @@
     function selectApi(apiId) {
         const validApis = ['default', 'invidious', 'sia', 'sennin', 'piped'];
         if (!validApis.includes(apiId)) {
-            showAlert('無効なAPI選択です', 2000);
+            showAlert('無効なAPI選択です', 2000, true);
             return;
         }
 
@@ -1352,6 +1515,9 @@
         const currentInfoApi = urlParams.get('api') || localStorage.getItem('selected_api') || 'default';
         const currentStreamApi = urlParams.get('stream_api') || localStorage.getItem('selected_stream_api') || 'default';
         
+        // チャンネル登録状態の確認
+        checkSubscribeStatus(authorId);
+
         // API選択状態を復元
         document.querySelectorAll('#apiOpts .yt-sub-item').forEach(i => i.classList.remove('selected'));
         const activeApiElem = document.getElementById(`api-${currentInfoApi}`);
