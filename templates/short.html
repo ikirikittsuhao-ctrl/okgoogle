@@ -6,13 +6,14 @@
 <style>
     /* --- Base.html 統合用 Shorts レイアウト --- */
     #yt-main {
-        padding: 0 !important;
+        padding: 56px 0 0 0 !important; /* ヘッダー(56px想定)の下に配置して被りを防止 */
         display: flex;
         justify-content: center;
         align-items: center;
         min-height: calc(100vh - 56px);
         background-color: var(--yt-bg);
         overflow: hidden;
+        box-sizing: border-box;
     }
 
     /* メインコンテナ（画面サイズに合わせて伸縮） */
@@ -21,7 +22,7 @@
         width: 100%;
         max-width: 450px;
         height: calc(100vh - 72px);
-        max-height: 840px;
+        max-height: calc(100vh - 80px); /* ヘッダーや画面上下から食い出さない高さ */
         display: flex;
         justify-content: center;
         align-items: center;
@@ -43,12 +44,15 @@
         align-items: center;
         background: #000000;
         cursor: pointer;
+        overflow: hidden;
     }
 
     video {
         width: 100%;
         height: 100%;
-        object-fit: cover;
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain; /* 動画の解像度やアスペクト比を維持して切れなく配置 */
     }
 
     /* 一時停止・読み込み表示 */
@@ -420,10 +424,13 @@
 
     /* --- レスポンシブ調整 --- */
     @media (max-width: 792px) {
+        #yt-main {
+            padding-top: 56px !important;
+        }
         .shorts-container {
             max-width: 100%;
             height: calc(100vh - 56px);
-            max-height: none;
+            max-height: calc(100vh - 56px);
             margin: 0;
             border-radius: 0;
         }
