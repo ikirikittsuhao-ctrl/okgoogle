@@ -83,6 +83,26 @@ async def get_recommended_api(request: Request):
 
   return JSONResponse(content=recommended_videos)
 
+@app.get("/api/channel_info")
+async def get_channel_info_api(ucid: str):
+    from app.search import fetch_invidious
+    try:
+        data = await fetch_invidious(f"/channels/{ucid}")
+        if isinstance(data, dict):
+            author_icon = ""
+            if "authorThumbnails" in data and len(data["authorThumbnails"]) > 0:
+                author_icon = data["authorThumbnails"][-1].get("url", "")
+            return JSONResponse(content={
+                "ucid": ucid,
+                "name": data.get("author", ucid),
+                "icon": author_icon,
+                "handle": data.get("authorUrl", ""),
+                "description": data.get("description", "")
+            })
+    except Exception:
+        pass
+    return JSONResponse(content={"ucid": ucid, "name": ucid, "icon": "", "handle": "", "description": ""})
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
   return templates.TemplateResponse(
