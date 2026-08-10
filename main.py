@@ -38,50 +38,50 @@ async def custom_http_exception_handler(request: Request, exc: StarletteHTTPExce
 
 @app.get("/api/recommended")
 async def get_recommended_api(request: Request):
-  try:
-    search_history_json = request.cookies.get("search_history", "[]")
-    search_history = json.loads(search_history_json)
-  except:
-    search_history = []
-
-  recent_keywords = (
-      search_history[-5:]
-      if search_history
-      else ["ボカロ", "VTuber", "ゲーム実況", "音楽", "ニュース"]
-  )
-
-  async def fetch_keyword_results(kw):
     try:
-      from app.search import fetch_invidious
-      res = await fetch_invidious(
-          "/search", {"q": kw, "page": 1, "type": "video"}, list_type="search"
-      )
-      if isinstance(res, list):
-        return [
-            item
-            for item in res
-            if item.get("type") == "video" and item.get("videoId")
-        ]
+        search_history_json = request.cookies.get("search_history", "[]")
+        search_history = json.loads(search_history_json)
     except:
-      pass
-    return []
+        search_history = []
 
-  tasks = [fetch_keyword_results(kw) for kw in recent_keywords]
-  results_list = await asyncio.gather(*tasks)
+    recent_keywords = (
+        search_history[-5:]
+        if search_history
+        else ["ボカロ", "VTuber", "ゲーム実況", "音楽", "ニュース"]
+    )
 
-  recommended_videos = []
-  seen_ids = set()
-  for res in results_list:
-    for item in res:
-      vid = item.get("videoId")
-      if vid and vid not in seen_ids:
-        seen_ids.add(vid)
-        recommended_videos.append(item)
+    async def fetch_keyword_results(kw):
+        try:
+            from app.search import fetch_invidious
+            res = await fetch_invidious(
+                "/search", {"q": kw, "page": 1, "type": "video"}, list_type="search"
+            )
+            if isinstance(res, list):
+                return [
+                    item
+                    for item in res
+                    if item.get("type") == "video" and item.get("videoId")
+                ]
+        except:
+            pass
+        return []
 
-  random.shuffle(recommended_videos)
-  recommended_videos = recommended_videos[:24]
+    tasks = [fetch_keyword_results(kw) for kw in recent_keywords]
+    results_list = await asyncio.gather(*tasks)
 
-  return JSONResponse(content=recommended_videos)
+    recommended_videos = []
+    seen_ids = set()
+    for res in results_list:
+        for item in res:
+            vid = item.get("videoId")
+            if vid and vid not in seen_ids:
+                seen_ids.add(vid)
+                recommended_videos.append(item)
+
+    random.shuffle(recommended_videos)
+    recommended_videos = recommended_videos[:24]
+
+    return JSONResponse(content=recommended_videos)
 
 @app.get("/api/channel_info")
 async def get_channel_info_api(ucid: str):
@@ -105,29 +105,36 @@ async def get_channel_info_api(ucid: str):
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-  return templates.TemplateResponse(
-      "home.html",
-      {"request": request},
-  )
+    # 初回アクセス判定用フラグをCookieから読み込み
+    has_visited = request.cookies.get("welcome_seen", "false") == "true"
+    if not has_visited:
+        return templates.TemplateResponse(
+            "welcome.html",
+            {"request": request},
+        )
+    return templates.TemplateResponse(
+        "home.html",
+        {"request": request},
+    )
 
 
 @app.get("/history", response_class=HTMLResponse)
 async def history_page(request: Request):
-  try:
-    history_list = json.loads(request.cookies.get("history", "[]"))
-  except:
-    history_list = []
-  history_list.reverse()
-  return templates.TemplateResponse(
-      "history.html", {"request": request, "history": history_list}
-  )
+    try:
+        history_list = json.loads(request.cookies.get("history", "[]"))
+    except:
+        history_list = []
+    history_list.reverse()
+    return templates.TemplateResponse(
+        "history.html", {"request": request, "history": history_list}
+    )
 
 
 @app.get("/history/clear")
 async def clear_history():
-  response = RedirectResponse(url="/history")
-  response.delete_cookie("history")
-  return response
+    response = RedirectResponse(url="/history")
+    response.delete_cookie("history")
+    return response
 
 
 @app.get("/suggest")
@@ -163,110 +170,110 @@ async def suggest(keyword: str):
 
 @app.get("/proxy/thumb")
 async def proxy_thumb(v: str):
-  from app.search import fetch_with_inflight, client_session
-  cache_key = f"thumb:{v}"
+    from app.search import fetch_with_inflight, client_session
+    cache_key = f"thumb:{v}"
 
-  async def _do_fetch():
-    thumb_url = f"https://i.ytimg.com/vi/{v}/mqdefault.jpg"
-    try:
-      resp = await client_session.get(thumb_url, timeout=3.0)
-      if resp.status_code == 200:
-        return resp.content
-    except:
-      pass
-    return None
+    async def _do_fetch():
+        thumb_url = f"https://i.ytimg.com/vi/{v}/mqdefault.jpg"
+        try:
+            resp = await client_session.get(thumb_url, timeout=3.0)
+            if resp.status_code == 200:
+                return resp.content
+        except:
+            pass
+        return None
 
-  content = await fetch_with_inflight(cache_key, _do_fetch, ttl=1800.0)
-  if content:
-    return Response(content=content, media_type="image/jpeg")
-  return Response(status_code=404)
+    content = await fetch_with_inflight(cache_key, _do_fetch, ttl=1800.0)
+    if content:
+        return Response(content=content, media_type="image/jpeg")
+    return Response(status_code=404)
 
 
 @app.get("/thumbnail")
 async def thumbnail(v: str):
-  return await proxy_thumb(v)
+    return await proxy_thumb(v)
 
 
 @app.get("/games", response_class=HTMLResponse)
 async def read_games(request: Request):
-  return templates.TemplateResponse("games.html", {"request": request})
+    return templates.TemplateResponse("games.html", {"request": request})
 
 
 @app.get("/block.html", response_class=HTMLResponse)
 async def read_block(request: Request):
-  return templates.TemplateResponse("block.html", {"request": request})
+    return templates.TemplateResponse("block.html", {"request": request})
 
 
 @app.get("/tumu.html", response_class=HTMLResponse)
 async def read_tumu(request: Request):
-  return templates.TemplateResponse("tumu.html", {"request": request})
+    return templates.TemplateResponse("tumu.html", {"request": request})
 
 
 @app.get("/2048.html", response_class=HTMLResponse)
 async def read_2048(request: Request):
-  return templates.TemplateResponse("2048.html", {"request": request})
+    return templates.TemplateResponse("2048.html", {"request": request})
 
 
 @app.get("/status", response_class=HTMLResponse)
 async def read_status(request: Request):
-  from app.search import client_session, get_invidious_instances_from_url, INVIDIOUS_VIDEO_LIST_URL
-  
-  async def check_instance(instance):
-    start_time = asyncio.get_event_loop().time()
-    try:
-      resp = await client_session.get(
-          f"{instance.rstrip('/')}/api/v1/stats", timeout=3.0
-      )
-      latency = (asyncio.get_event_loop().time() - start_time) * 1000
-      if resp.status_code == 200:
-        data = resp.json()
-        return {
-            "instance": instance,
-            "status": "Online",
-            "latency": f"{int(latency)}ms",
-            "version": data.get("software", {}).get("version", "unknown"),
-            "users": data.get("usage", {}).get("users", {}).get("total", 0),
-        }
-      return {
-          "instance": instance,
-          "status": f"Error {resp.status_code}",
-          "latency": "-",
-          "version": "-",
-          "users": "-",
-      }
-    except:
-      return {
-          "instance": instance,
-          "status": "Offline",
-          "latency": "-",
-          "version": "-",
-          "users": "-",
-      }
+    from app.search import client_session, get_invidious_instances_from_url, INVIDIOUS_VIDEO_LIST_URL
+    
+    async def check_instance(instance):
+        start_time = asyncio.get_event_loop().time()
+        try:
+            resp = await client_session.get(
+                f"{instance.rstrip('/')}/api/v1/stats", timeout=3.0
+            )
+            latency = (asyncio.get_event_loop().time() - start_time) * 1000
+            if resp.status_code == 200:
+                data = resp.json()
+                return {
+                    "instance": instance,
+                    "status": "Online",
+                    "latency": f"{int(latency)}ms",
+                    "version": data.get("software", {}).get("version", "unknown"),
+                    "users": data.get("usage", {}).get("users", {}).get("total", 0),
+                }
+            return {
+                "instance": instance,
+                "status": f"Error {resp.status_code}",
+                "latency": "-",
+                "version": "-",
+                "users": "-",
+            }
+        except:
+            return {
+                "instance": instance,
+                "status": "Offline",
+                "latency": "-",
+                "version": "-",
+                "users": "-",
+            }
 
-  video_instances = await get_invidious_instances_from_url(
-      INVIDIOUS_VIDEO_LIST_URL
-  )
-  status_results = await asyncio.gather(
-      *(check_instance(inst) for inst in video_instances)
-  )
-  return templates.TemplateResponse(
-      "status.html", {"request": request, "instances": status_results}
-  )
+    video_instances = await get_invidious_instances_from_url(
+        INVIDIOUS_VIDEO_LIST_URL
+    )
+    status_results = await asyncio.gather(
+        *(check_instance(inst) for inst in video_instances)
+    )
+    return templates.TemplateResponse(
+        "status.html", {"request": request, "instances": status_results}
+    )
 
 
 @app.get("/subscriptions", response_class=HTMLResponse)
 async def subscriptions_page(request: Request):
-  return templates.TemplateResponse("subscriptions.html", {"request": request})
+    return templates.TemplateResponse("subscriptions.html", {"request": request})
 
 
 @app.get("/bbs", response_class=HTMLResponse)
 async def bbs_page(request: Request):
-  return templates.TemplateResponse("bbs.html", {"request": request})
+    return templates.TemplateResponse("bbs.html", {"request": request})
 
 
 @app.get("/ytdl", response_class=HTMLResponse)
 async def ytdl_page(request: Request):
-  return templates.TemplateResponse("bbs.html", {"request": request})
+    return templates.TemplateResponse("bbs.html", {"request": request})
 
 
 @app.get("/setting", response_class=HTMLResponse)
@@ -275,5 +282,5 @@ async def setting_page(request: Request):
 
 
 if __name__ == "__main__":
-  import uvicorn
-  uvicorn.run(app, host="0.0.0.0", port=8000)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
