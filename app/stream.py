@@ -388,10 +388,10 @@ async def fetch_rapidapi_stream(v: str) -> StreamResult:
 
 
 async def fetch_zernio_stream(v: str) -> StreamResult:
-    """Zernio - ストリーム取得（リダイレクト対応）"""
+    """Zernio - ストリーム取得（リダイレクト対応、formatId=2指定）"""
     try:
         target_url = f"https://www.youtube.com/watch?v={v}"
-        url = f"https://getlate.dev/api/tools/youtube-live-downloader?url={target_url}"
+        url = f"https://getlate.dev/api/tools/youtube-live-downloader?url={target_url}&formatId=2"
         
         # リダイレクトを追跡
         resp = await asyncio.wait_for(
@@ -405,7 +405,7 @@ async def fetch_zernio_stream(v: str) -> StreamResult:
                 return StreamResult(
                     stream_urls=[StreamUrl(
                         url=location,
-                        resolution="Live/Auto",
+                        resolution="360p",
                         format="mp4/mixed",
                     )],
                     video_urls=[location],
