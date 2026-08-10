@@ -26,7 +26,6 @@ templates.env.add_extension("jinja2.ext.do")
 
 RAPID_API_HOST = "ytstream-download-youtube-videos.p.rapidapi.com"
 
-
 class StreamProvider(Enum):
     SIA = "sia"
     PIPED = "piped"
@@ -421,6 +420,35 @@ async def fetch_sennin_stream(v: str) -> StreamResult:
         raise Exception(f"Sennin failed: {str(e)}")
 
 
+async def fetch_sia_comments(v: str) -> Dict[str, Any]:
+    try:
+        url = f"https://siatube.com/api/comments?videoId={v}"
+        data = await _fetch_with_timeout(url, timeout=3.5)
+        
+        if data and isinstance(data, dict) and "comments" in data:
+            return data
+
+        raise Exception("Invalid response format")
+
+    except Exception as e:
+        raise Exception(f"Sia comments failed: {str(e)}")
+
+
+async def fetch_sennin_comments(v: str, sort: str = "top") -> Dict[str, Any]:
+    try:
+        url = f"{SENNIN_API_BASE}/api/comments"
+        params = {"videoId": v, "sort": sort}
+        data = await _fetch_with_timeout(url, params=params, timeout=4.0)
+
+        if data and data.get("success") is True:
+            return data
+
+        raise Exception("Invalid response")
+
+    except Exception as e:
+        raise Exception(f"Sennin comments failed: {str(e)}")
+
+
 async def _fetch_stream_with_fallback(
     v: str,
     api: Optional[str] = None,
@@ -557,30 +585,15 @@ async def fetch_comments(
 ) -> Optional[Dict[str, Any]]:
     cache_key = f"comments:{v}:{force_instance or ''}:{api or ''}"
 
-    async def _do_fetch_comments() -> Optional[Dict[str, Any]]:
+    async def _do_fetch() -> Optional[Dict[str, Any]]:
         if api == "sia":
             try:
-                url = f"https://siatube.com/api/comments?videoId={v}"
-                data = await _fetch_with_timeout(url, timeout=3.5)
-                
-                if data and isinstance(data, dict) and "comments" in data:
-                    return data
-
-                raise Exception("Invalid response format")
-
+                return await fetch_sia_comments(v)
             except Exception:
                 pass
         elif api == "sennin":
             try:
-                url = f"{SENNIN_API_BASE}/api/comments"
-                params = {"videoId": v, "sort": "top"}
-                data = await _fetch_with_timeout(url, params=params, timeout=4.0)
-
-                if data and data.get("success") is True:
-                    return data
-
-                raise Exception("Invalid response")
-
+                return await fetch_sennin_comments(v)
             except Exception:
                 pass
         elif api == "invidious":
@@ -599,13 +612,9 @@ async def fetch_comments(
                     list_type="video",
                 )
             ),
+            "sia": asyncio.create_task(fetch_sia_comments(v)),
+            "sennin": asyncio.create_task(fetch_sennin_comments(v)),
         }
-
-        sia_task = asyncio.create_task(_fetch_sia_comments_internal(v))
-        sennin_task = asyncio.create_task(_fetch_sennin_comments_internal(v))
-        
-        tasks["sia"] = sia_task
-        tasks["sennin"] = sennin_task
 
         done, pending = await asyncio.wait(
             tasks.values(),
@@ -629,31 +638,4 @@ async def fetch_comments(
 
         return None
 
-    async def _fetch_sia_comments_internal(v: str) -> Optional[Dict[str, Any]]:
-        try:
-            url = f"https://siatube.com/api/comments?videoId={v}"
-            data = await _fetch_with_timeout(url, timeout=3.5)
-            
-            if data and isinstance(data, dict) and "comments" in data:
-                return data
-
-            raise Exception("Invalid response format")
-
-        except Exception:
-            return None
-
-    async def _fetch_sennin_comments_internal(v: str, sort: str = "top") -> Optional[Dict[str, Any]]:
-        try:
-            url = f"{SENNIN_API_BASE}/api/comments"
-            params = {"videoId": v, "sort": sort}
-            data = await _fetch_with_timeout(url, params=params, timeout=4.0)
-
-            if data and data.get("success") is True:
-                return data
-
-            raise Exception("Invalid response")
-
-        except Exception:
-            return None
-
-    return await fetch_with_inflight(cache_key, _do_fetch_comments, ttl=180.0)
+    return await fetch_with_inflight(cache_key, _do_fetch, ttl=180.0)
