@@ -64,7 +64,7 @@
         gap: 8px;
         max-width: 1754px;
         margin: 0 auto;
-        padding: 4px 12px 0 12px;
+        padding: 0 12px 0 12px;
         box-sizing: border-box;
     }
 
@@ -72,7 +72,7 @@
         .yt-watch-page-container {
             grid-template-columns: minmax(0, 1fr) 320px;
             gap: 8px;
-            padding: 4px 8px 0 8px;
+            padding: 0 8px 0 8px;
         }
     }
 
@@ -335,6 +335,7 @@
         align-items: center;
         gap: 12px;
         text-align: left;
+        flex-wrap: wrap;
     }
 
     .yt-api-badge {
@@ -476,6 +477,7 @@
 
     .yt-custom-select.open .yt-select-dropdown {
         display: flex;
+        animation: cpFadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) forwards;
     }
 
     .yt-dropdown-item {
@@ -603,7 +605,6 @@
         background: var(--yt-alert-error-bg);
     }
 
-    /* Floating trigger & Control Panel Styles */
     #floating-control {
         position: fixed;
         bottom: 24px;
@@ -651,9 +652,30 @@
 
     #controlPanel.open {
         display: flex;
-        opacity: 1;
-        transform: translateY(0) scale(1);
+        animation: cpSlideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
         pointer-events: auto;
+    }
+
+    @keyframes cpSlideUp {
+        0% {
+            opacity: 0;
+            transform: translateY(30px) scale(0.9);
+        }
+        100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+
+    @keyframes cpFadeIn {
+        0% {
+            opacity: 0;
+            transform: translateY(-8px);
+        }
+        100% {
+            opacity: 1;
+            transform: translateY(0);
+        }
     }
 
     .cp-header { display: flex; align-items: center; padding: 14px 16px 0; gap: 8px; flex-shrink: 0; }
@@ -855,7 +877,6 @@
         </div>
     </div>
 
-    <!-- Floating Trigger & Control Panel UI -->
     <div id="floating-control">
         <div class="yt-control-trigger" onclick="toggleControlPanel()">
             <i class="fas fa-cog"></i>
@@ -874,7 +895,6 @@
         </div>
         <div class="cp-slide-wrap">
             <div class="cp-slide-track" id="cpSlideTrack">
-                <!-- Tab 1: 再生設定 -->
                 <div class="cp-slide-page">
                     <div class="cp-card">
                         <div class="cp-card-title">プレイヤーコントロール</div>
@@ -902,7 +922,6 @@
                     </div>
                 </div>
 
-                <!-- Tab 2: ソース切替 -->
                 <div class="cp-slide-page">
                     <div class="cp-card-title" style="margin-bottom:8px;">埋め込み・再生モード</div>
                     <div class="cp-mode-card selected" id="cp-mode-card-stream" onclick="selectSourceMode('stream')">
@@ -928,17 +947,16 @@
                     </div>
                 </div>
 
-                <!-- Tab 3: API設定 -->
                 <div class="cp-slide-page">
                     <div class="cp-card">
                         <div class="cp-card-title">ストリーム取得 API</div>
                         <select class="cp-select" id="cpStreamApiSelect" onchange="applyStreamApiChange(this.value)">
-                            <option value="default">デフォルト API</option>
+                            <option value="">自動選択</option>
                             <option value="sia">Sia API</option>
                             <option value="piped">Piped API</option>
-                            <option value="invidious">Invidious API</option>
                             <option value="rapidapi">RapidAPI</option>
                             <option value="zernio">Zernio API</option>
+                            <option value="invidious">Invidious API</option>
                             <option value="sennin">Sennin API</option>
                         </select>
                     </div>
@@ -946,17 +964,10 @@
                     <div class="cp-card">
                         <div class="cp-card-title">情報取得 API</div>
                         <select class="cp-select" id="cpInfoApiSelect" onchange="applyInfoApiChange(this.value)">
-                            <option value="default">デフォルト API</option>
+                            <option value="">自動選択</option>
                             <option value="invidious">Invidious API</option>
                             <option value="sia">Sia API</option>
                             <option value="sennin">Sennin API</option>
-                            {% if available_apis %}
-                                {% for api in available_apis %}
-                                <option value="{{ api.id }}">{{ api.name }}</option>
-                                {% endfor %}
-                            {% else %}
-                                <option value="piped">Piped API</option>
-                            {% endif %}
                         </select>
                     </div>
                 </div>
@@ -1034,8 +1045,8 @@
 
                     <div class="yt-custom-select" id="apiInfoSelect">
                         <button class="yt-pill-button" id="apiInfoTrigger" onclick="toggleApiInfoDropdown(event)">
-                            <span class="yt-api-status loading"></span>
-                            <span id="apiInfoLabel">API: 取得中</span>
+                            <span class="yt-api-status active"></span>
+                            <span id="apiInfoLabel">API: 情報を確認中</span>
                             <i class="fas fa-chevron-down" style="font-size: 0.75rem; margin-left: 2px;"></i>
                         </button>
                         <div class="yt-select-dropdown" id="apiInfoDropdown">
@@ -1048,18 +1059,6 @@
                                 <div class="yt-dropdown-label">ストリーム取得API</div>
                                 <div id="streamApiDisplay" class="yt-dropdown-value">取得中...</div>
                                 <div id="streamApiStatusDisplay" class="yt-dropdown-value" style="color: var(--yt-spec-text-secondary); font-size: 0.7rem; margin-top: 2px;"></div>
-                            </div>
-                            <div class="yt-dropdown-section">
-                                <div class="yt-dropdown-label">タイムアウト設定</div>
-                                <div class="yt-dropdown-value">
-                                    情報: <span id="timeoutInfoDisplay">4.0s</span> | ストリーム: <span id="timeoutStreamDisplay">2.5s</span>
-                                </div>
-                            </div>
-                            <div class="yt-dropdown-section">
-                                <div class="yt-dropdown-label">キャッシュ</div>
-                                <div class="yt-dropdown-value">
-                                    情報: <span id="cacheTtlInfoDisplay">180s</span> | ストリーム: <span id="cacheTtlStreamDisplay">120s</span>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -1176,9 +1175,10 @@
     const iframeContainer = document.getElementById('iframe-container');
     const videoId = "{{ videoid }}";
     const authorId = "{{ author_id }}";
+    const streamApiUsed = "{{ stream_api_used }}";
+    const infoApiUsed = "{{ info_api_used }}";
     let hlsInstance = null;
 
-    // ========== チャンネル登録トグル・状態管理機能 ==========
     function toggleSubscribe(ucid) {
         if (!ucid) return;
 
@@ -1216,13 +1216,12 @@
         }
     }
 
-    function checkSubscribeStatus(ucid) {
-        if (!ucid) return;
+    function checkSubscribeStatus(ucic) {
+        if (!ucic) return;
         const subs = JSON.parse(localStorage.getItem('subscribed_channels') || '[]');
-        updateSubscribeState(subs.includes(ucid));
+        updateSubscribeState(subs.includes(ucic));
     }
 
-    // ========== プレイリスト非表示処理 ==========
     function closePlaylist() {
         const panel = document.getElementById('playlist-panel');
         if (panel) {
@@ -1230,42 +1229,11 @@
         }
     }
 
-    // ========== API設定情報 ==========
-    const API_CONFIG = {
-        info: {
-            apis: ['invidious', 'sia', 'sennin'],
-            timeouts: { invidious: 4.0, sia: 3.0, sennin: 4.0 },
-            cacheTtl: 180,
-            descriptions: {
-                invidious: 'Invidious集約API',
-                sia: 'Sia Tube API',
-                sennin: 'Sennin API',
-                default: 'デフォルト（自動フォールバック）'
-            }
-        },
-        stream: {
-            apis: ['sia', 'piped', 'rapidapi', 'zernio', 'invidious', 'sennin'],
-            timeouts: { sia: 2.5, piped: 2.5, rapidapi: 2.5, zernio: 3.0, invidious: 4.0, sennin: 3.5 },
-            cacheTtl: 120,
-            descriptions: {
-                sia: 'Sia Tube ストリーミング',
-                piped: 'Piped インスタンス',
-                rapidapi: 'RapidAPI YouTubeStreamer',
-                zernio: 'Zernio ダウンローダ',
-                invidious: 'Invidious ストリーム',
-                sennin: 'Sennin ストリーミング',
-                default: 'デフォルト（自動フォールバック）'
-            }
-        }
-    };
-
-    // ========== 音声・動画の同期ロジック ==========
     video.addEventListener('play', () => { if (audio.src) audio.play(); });
     video.addEventListener('pause', () => { if (audio.src) audio.pause(); });
     video.addEventListener('seeking', () => { if (audio.src) audio.currentTime = video.currentTime; });
     video.addEventListener('ratechange', () => { if (audio.src) audio.playbackRate = video.playbackRate; });
 
-    // ========== UI モール・アラート制御 ==========
     function openModal() { document.getElementById('dl-modal').style.display = 'flex'; }
     function closeModal() { document.getElementById('dl-modal').style.display = 'none'; }
     
@@ -1307,7 +1275,6 @@
         }, 300);
     }
 
-    // アラートの横スワイプ操作の実装
     (function initSwipeableAlert() {
         const el = document.getElementById('custom-alert');
         let startX = 0;
@@ -1356,7 +1323,6 @@
         window.addEventListener('mouseup', onEnd);
     })();
 
-    // ========== 概要欄のもっと見る・一部表示トグル機能 ==========
     function toggleDescription() {
         const container = document.getElementById('description-container');
         const btn = document.getElementById('desc-toggle-btn');
@@ -1369,48 +1335,40 @@
         }
     }
 
-    // ========== API情報表示の更新 ==========
     function updateApiDisplay() {
-        const urlParams = new URLSearchParams(window.location.search);
-        const currentInfoApi = urlParams.get('api') || localStorage.getItem('selected_api') || 'default';
-        const currentStreamApi = urlParams.get('stream_api') || localStorage.getItem('selected_stream_api') || 'default';
+        const infoApiMap = {
+            'invidious': { name: 'Invidious', timeout: '4.0s' },
+            'sia': { name: 'Sia Tube', timeout: '3.0s' },
+            'sennin': { name: 'Sennin', timeout: '4.0s' }
+        };
 
-        // 情報API表示
-        const infoApiDesc = API_CONFIG.info.descriptions[currentInfoApi] || API_CONFIG.info.descriptions.default;
-        const infoApiTimeout = API_CONFIG.info.timeouts[currentInfoApi] || '4.0s';
-        document.getElementById('infoApiDisplay').innerText = `${currentInfoApi} - ${infoApiDesc}`;
-        document.getElementById('infoApiStatusDisplay').innerText = `タイムアウト: ${infoApiTimeout}s`;
-        document.getElementById('current-info-api-name').innerText = currentInfoApi.toUpperCase();
+        const streamApiMap = {
+            'sia': { name: 'Sia Tube', timeout: '2.5s' },
+            'piped': { name: 'Piped', timeout: '2.5s' },
+            'rapidapi': { name: 'RapidAPI', timeout: '2.5s' },
+            'zernio': { name: 'Zernio', timeout: '3.0s' },
+            'invidious': { name: 'Invidious', timeout: '4.0s' },
+            'sennin': { name: 'Sennin', timeout: '3.5s' }
+        };
 
-        // ストリームAPI表示
-        const streamApiDesc = API_CONFIG.stream.descriptions[currentStreamApi] || API_CONFIG.stream.descriptions.default;
-        const streamApiTimeout = API_CONFIG.stream.timeouts[currentStreamApi] || '2.5s';
-        document.getElementById('streamApiDisplay').innerText = `${currentStreamApi} - ${streamApiDesc}`;
-        document.getElementById('streamApiStatusDisplay').innerText = `タイムアウト: ${streamApiTimeout}s`;
-        document.getElementById('current-stream-api-name').innerText = currentStreamApi.toUpperCase();
+        const infoApi = infoApiUsed || 'invidious';
+        const streamApi = streamApiUsed || 'sia';
 
-        // API情報ボタン表示
-        const infoApiShort = currentInfoApi === 'default' ? 'AUTO' : currentInfoApi.substring(0, 3).toUpperCase();
-        const streamApiShort = currentStreamApi === 'default' ? 'AUTO' : currentStreamApi.substring(0, 3).toUpperCase();
-        document.getElementById('apiInfoLabel').innerText = `API: ${infoApiShort} / ${streamApiShort}`;
+        const infoData = infoApiMap[infoApi] || { name: infoApi.toUpperCase(), timeout: '?' };
+        const streamData = streamApiMap[streamApi] || { name: streamApi.toUpperCase(), timeout: '?' };
 
-        // キャッシュTTL表示
-        document.getElementById('cacheTtlInfoDisplay').innerText = `${API_CONFIG.info.cacheTtl}s`;
-        document.getElementById('cacheTtlStreamDisplay').innerText = `${API_CONFIG.stream.cacheTtl}s`;
+        document.getElementById('infoApiDisplay').innerText = `${infoApi} - ${infoData.name}`;
+        document.getElementById('infoApiStatusDisplay').innerText = `タイムアウト: ${infoData.timeout}`;
+        document.getElementById('current-info-api-name').innerText = infoApi.toUpperCase();
 
-        // タイムアウト表示
-        document.getElementById('timeoutInfoDisplay').innerText = `${infoApiTimeout}s`;
-        document.getElementById('timeoutStreamDisplay').innerText = `${streamApiTimeout}s`;
+        document.getElementById('streamApiDisplay').innerText = `${streamApi} - ${streamData.name}`;
+        document.getElementById('streamApiStatusDisplay').innerText = `タイムアウト: ${streamData.timeout}`;
+        document.getElementById('current-stream-api-name').innerText = streamApi.toUpperCase();
 
-        // ステータスインジケータ更新
-        const statusIndicator = document.querySelector('.yt-api-status');
-        if (statusIndicator) {
-            statusIndicator.classList.remove('loading', 'error', 'active');
-            statusIndicator.classList.add('active');
-        }
+        const apiLabel = `API: ${infoApi.substring(0, 3).toUpperCase()} / ${streamApi.substring(0, 3).toUpperCase()}`;
+        document.getElementById('apiInfoLabel').innerText = apiLabel;
     }
 
-    // ========== ドロップダウン制御 ==========
     function toggleQualityDropdown(e) {
         e.stopPropagation();
         document.getElementById('qualitySelect').classList.toggle('open');
@@ -1437,7 +1395,6 @@
         }
     });
 
-    // ========== 画質選択ロジック ==========
     document.querySelectorAll('#qualitySelect .yt-dropdown-item').forEach(item => {
         item.addEventListener('click', function() {
             document.querySelectorAll('#qualitySelect .yt-dropdown-item').forEach(i => i.classList.remove('selected'));
@@ -1487,7 +1444,6 @@
         video.play();
     }
 
-    // ========== 新コントロールパネル（モダンUI）制御 ==========
     function toggleControlPanel() {
         const panel = document.getElementById('controlPanel');
         panel.classList.toggle('open');
@@ -1556,88 +1512,64 @@
     }
 
     function applyStreamApiChange(apiId) {
-        selectStreamApi(apiId);
-    }
-
-    function applyInfoApiChange(apiId) {
-        selectApi(apiId);
-    }
-
-    function selectStreamApi(apiId) {
-        const validApis = ['default', 'sia', 'piped', 'invidious', 'rapidapi', 'zernio', 'sennin'];
-        if (!validApis.includes(apiId)) {
-            showAlert('無効なAPI選択です', 2000, true);
+        if (!apiId) {
+            showAlert('ストリームAPIを自動選択に設定しました', 1500);
             return;
         }
 
-        localStorage.setItem('selected_stream_api', apiId);
-        
         const currentUrl = new URL(window.location.href);
         currentUrl.searchParams.set('stream_api', apiId);
         
-        const apiDesc = API_CONFIG.stream.descriptions[apiId] || 'Unknown API';
-        showAlert(`ストリームAPI を「${apiDesc}」に変更します...`, 1500);
+        showAlert(`ストリームAPIを「${apiId.toUpperCase()}」に変更します...`, 1500);
         
         setTimeout(() => {
             window.location.href = currentUrl.toString();
         }, 500);
     }
 
-    function selectApi(apiId) {
-        const validApis = ['default', 'invidious', 'sia', 'sennin', 'piped'];
-        if (!validApis.includes(apiId)) {
-            showAlert('無効なAPI選択です', 2000, true);
+    function applyInfoApiChange(apiId) {
+        if (!apiId) {
+            showAlert('情報取得APIを自動選択に設定しました', 1500);
             return;
         }
 
-        localStorage.setItem('selected_api', apiId);
-        
         const currentUrl = new URL(window.location.href);
-        currentUrl.searchParams.set('api', apiId);
+        currentUrl.searchParams.set('info_api', apiId);
         
-        const apiDesc = API_CONFIG.info.descriptions[apiId] || 'Unknown API';
-        showAlert(`情報取得API を「${apiDesc}」に変更します...`, 1500);
+        showAlert(`情報取得APIを「${apiId.toUpperCase()}」に変更します...`, 1500);
         
         setTimeout(() => {
             window.location.href = currentUrl.toString();
         }, 500);
     }
 
-    // ========== 初期化処理 ==========
     document.addEventListener('DOMContentLoaded', () => {
         const urlParams = new URLSearchParams(window.location.search);
-        const currentInfoApi = urlParams.get('api') || localStorage.getItem('selected_api') || 'default';
-        const currentStreamApi = urlParams.get('stream_api') || localStorage.getItem('selected_stream_api') || 'default';
+        const currentInfoApi = urlParams.get('info_api') || infoApiUsed || '';
+        const currentStreamApi = urlParams.get('stream_api') || streamApiUsed || '';
         
-        // チャンネル登録状態の確認
         checkSubscribeStatus(authorId);
 
-        // API選択状態（Select要素）を復元
         const streamSelect = document.getElementById('cpStreamApiSelect');
-        if (streamSelect) streamSelect.value = currentStreamApi;
+        if (streamSelect) streamSelect.value = currentStreamApi || '';
 
         const infoSelect = document.getElementById('cpInfoApiSelect');
-        if (infoSelect) infoSelect.value = currentInfoApi;
+        if (infoSelect) infoSelect.value = currentInfoApi || '';
 
-        // プレイヤー状態の同期
         document.getElementById('cpLoopToggle').checked = video.loop;
         document.getElementById('cpMuteToggle').checked = video.muted;
 
-        // ユーザー設定の埋め込み再生モードを復元
         const preferredEmbedMode = localStorage.getItem('pref_embed_mode') || 'stream';
         selectSourceMode(preferredEmbedMode);
 
-        // API情報表示を更新
         updateApiDisplay();
 
-        // 推奨ビデオのプリロード
         const thumbs = document.querySelectorAll('.yt-recommend-thumb');
         thumbs.forEach(thumb => {
             thumb.loading = 'lazy';
         });
     });
 
-    // ========== パフォーマンス最適化 ==========
     if ('IntersectionObserver' in window) {
         const observer = new IntersectionObserver((entries) => {
             entries.forEach(entry => {
@@ -1655,7 +1587,6 @@
         document.querySelectorAll('img[data-src]').forEach(img => observer.observe(img));
     }
 
-    // ページ離脱時のリソース解放
     window.addEventListener('beforeunload', () => {
         if (hlsInstance) {
             hlsInstance.destroy();
