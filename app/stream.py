@@ -471,25 +471,11 @@ async def _fetch_stream_with_fallback(
             pass
 
     try:
-        result = await fetch_zernio_stream(v)
-        if result and result.video_urls:
-            return result
-    except Exception:
-        pass
-
-    try:
-        result = await fetch_sia_stream(v)
-        if result and result.video_urls:
-            return result
-    except Exception:
-        pass
-
-    try:
         v_data = await fetch_video_info_invidious_robust(
             v, force_instance=force_instance
         )
         res_dict = extract_invidious_streams(v_data)
-        res_dict["stream_api_used"] = "invidious"
+        res_dict["stream_api_used"] = "invidious_fallback"
         return StreamResult(
             stream_urls=[
                 StreamUrl(
@@ -501,7 +487,7 @@ async def _fetch_stream_with_fallback(
                 for s in res_dict.get("streamUrls", [])
             ],
             video_urls=res_dict.get("videoUrls", []),
-            stream_api_used=res_dict.get("stream_api_used", "invidious"),
+            stream_api_used=res_dict.get("stream_api_used", "invidious_fallback"),
             title=res_dict.get("title"),
             author=res_dict.get("author"),
             author_id=res_dict.get("authorId"),
@@ -537,16 +523,9 @@ async def fetch_fastest_stream_urls(
                 pass
 
         try:
-            result = await fetch_zernio_stream(v)
-            if result and result.video_urls:
-                return result.to_dict()
-        except Exception:
-            pass
-
-        try:
-            result = await fetch_sia_stream(v)
-            if result and result.video_urls:
-                return result.to_dict()
+            zernio_result = await fetch_zernio_stream(v)
+            if zernio_result and zernio_result.video_urls:
+                return zernio_result.to_dict()
         except Exception:
             pass
 
@@ -561,6 +540,38 @@ async def fetch_fastest_stream_urls(
                 return res_dict
         except Exception:
             pass
+
+        providers = [
+            ("sia", fetch_sia_stream),
+            ("piped", fetch_piped_stream),
+            ("rapidapi", fetch_rapidapi_stream),
+            ("zernio", fetch_zernio_stream),
+        ]
+
+        tasks = {
+            name: asyncio.create_task(fetch_fn(v))
+            for name, fetch_fn in providers
+        }
+
+        done, pending = await asyncio.wait(
+            tasks.values(),
+            timeout=timeout,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        for name, task in tasks.items():
+            if task in done:
+                try:
+                    result = task.result()
+                    if result and result.video_urls:
+                        for t in pending:
+                            t.cancel()
+                        return result.to_dict()
+                except Exception:
+                    continue
+
+        for task in pending:
+            task.cancel()
 
         return None
 
