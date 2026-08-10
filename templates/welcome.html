@@ -3,18 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>仙人tube plus - Welcome</title>
+  <title>仙人tube plus - Welcome Experience</title>
+  
+  <!-- 手書き風フォント（Caveat）の読み込み -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600&display=swap" rel="stylesheet">
 
   <style>
+    /* ==========================================================
+       1. デザインシステム & カラーパレット
+       ========================================================== */
     :root {
       --g-blue: #4285f4;
       --g-red: #ea4335;
       --g-yellow: #fbbc05;
       --g-green: #34a853;
 
+      /* ライトモード（コントラストを強めて視認性を確保） */
       --bg-base: #f0f4f9;
       --text-main: #111827;
       --text-sub: #374151;
@@ -26,6 +32,8 @@
       --glass-shadow: 0 20px 50px rgba(0, 0, 0, 0.1);
       --indicator-bg: rgba(0, 0, 0, 0.2);
       --glow-color: rgba(26, 115, 232, 0.3);
+
+      /* カスタムスクロールバー用変数 */
       --scrollbar-track: rgba(0, 0, 0, 0.05);
       --scrollbar-thumb: rgba(0, 0, 0, 0.2);
       --scrollbar-thumb-hover: rgba(0, 0, 0, 0.35);
@@ -33,6 +41,7 @@
 
     @media (prefers-color-scheme: dark) {
       :root {
+        /* ダークモード */
         --bg-base: #0a0e17;
         --text-main: #f3f4f6;
         --text-sub: #d1d5db;
@@ -68,6 +77,10 @@
       overflow: hidden;
       position: relative;
     }
+
+    /* ==========================================================
+       2. 背景キャンバス & オーロラグロー
+       ========================================================== */
     #particleCanvas {
       position: absolute;
       inset: 0;
@@ -99,6 +112,7 @@
       100% { transform: translate(50px, 30px) scale(1.1); }
     }
 
+    /* 視認性向上のためのバックドロップオーバーレイ */
     .bg-overlay {
       position: absolute;
       inset: 0;
@@ -107,6 +121,9 @@
       pointer-events: none;
     }
 
+    /* ==========================================================
+       3. 手書き文字 Welcome (Boot Overlay)
+       ========================================================== */
     .boot-overlay {
       position: fixed;
       inset: 0;
@@ -123,6 +140,7 @@
       visibility: hidden;
     }
 
+    /* 直書き＋手書きアニメーション welcome テキスト */
     .glass-welcome {
       font-family: 'Caveat', cursive;
       font-size: 8rem;
@@ -167,6 +185,10 @@
         filter: blur(0);
       }
     }
+
+    /* ==========================================================
+       4. 全画面プレゼンテーション
+       ========================================================== */
     .fullscreen-wrapper {
       position: relative;
       z-index: 1;
@@ -186,6 +208,7 @@
       transform: scale(1);
     }
 
+    /* ヘッダーブランドロゴ */
     .top-header {
       display: flex;
       align-items: center;
@@ -199,6 +222,8 @@
       width: 26px;
       height: 26px;
     }
+
+    /* スライド トラック */
     .viewport-slider {
       flex: 1;
       display: flex;
@@ -227,8 +252,9 @@
       transform: scale(0.92) translateY(10px);
       transition: opacity 0.7s ease, transform 0.7s ease;
       pointer-events: none;
-      overflow-y: auto; 
+      overflow-y: auto; /* 長いコンテンツにも対応 */
       
+      /* スクロールバーのカスタマイズ（WebKit） */
       scrollbar-width: thin;
       scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
     }
@@ -326,6 +352,7 @@
       color: var(--btn-primary-text);
     }
 
+    /* スライドとは別UIの「開発者 & デプロイ者」パネル */
     .credits-container {
       width: 100%;
       max-width: 800px;
@@ -419,6 +446,9 @@
       border: 1.5px dashed rgba(128, 128, 128, 0.25);
     }
 
+    /* ==========================================================
+       5. 下部コントロールバー
+       ========================================================== */
     .bottom-bar {
       display: flex;
       align-items: center;
@@ -494,6 +524,7 @@
       transform: translateY(0);
     }
 
+    /* レスポンシブ対応 */
     @media (max-width: 768px) {
       .fullscreen-wrapper { padding: 30px 20px; }
       .glass-welcome { font-size: 5rem; }
@@ -505,6 +536,9 @@
       .credit-card { padding: 20px; }
     }
 
+    /* ==========================================================
+       6. モーダルUI
+       ========================================================== */
     .modal-backdrop {
       position: fixed;
       inset: 0;
@@ -573,27 +607,34 @@
 </head>
 <body>
 
+  <!-- 背景オーロラ & パーティクル -->
   <div class="ambient-glow glow-1"></div>
   <div class="ambient-glow glow-2"></div>
   <div class="bg-overlay"></div>
   <canvas id="particleCanvas"></canvas>
 
+  <!-- 1. アプリ起動画面（直書き＋手書き風アニメーション welcome） -->
   <div class="boot-overlay" id="bootOverlay">
     <div class="glass-welcome">
       <span>w</span><span>e</span><span>l</span><span>c</span><span>o</span><span>m</span><span>e</span>
     </div>
   </div>
 
+  <!-- 2. 全画面チュートリアルUI -->
   <div class="fullscreen-wrapper" id="mainWrapper">
+    <!-- ヘッダー -->
     <header class="top-header">
       <svg viewBox="0 0 24 24" fill="none">
         <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" fill="var(--g-red)"/>
       </svg>
       <span>仙人tube plus</span>
     </header>
+
+    <!-- スライド表示領域 -->
     <main class="viewport-slider">
       <div class="slider-track" id="sliderTrack">
 
+        <!-- Slide 1 -->
         <section class="slide active">
           <div class="slide-icon-badge">
             <svg viewBox="0 0 24 24" fill="none">
@@ -721,6 +762,7 @@
     </footer>
   </div>
 
+  <!-- 3. 確認モーダルUI -->
   <div class="modal-backdrop" id="confirmModal">
     <div class="glass-modal">
       <h3 class="modal-title">アプリを開始しますか？</h3>
@@ -735,6 +777,9 @@
   </div>
 
   <script>
+    // ==========================================================
+    // 1. パーティクルキャンバス制御
+    // ==========================================================
     const canvas = document.getElementById('particleCanvas');
     const ctx = canvas.getContext('2d');
 
@@ -777,6 +822,9 @@
     }
     animateParticles();
 
+    // ==========================================================
+    // 2. Bot判定 ＆ ブート制御
+    // ==========================================================
     const bootOverlay = document.getElementById('bootOverlay');
     const mainWrapper = document.getElementById('mainWrapper');
 
@@ -798,6 +846,9 @@
       }, 2500);
     });
 
+    // ==========================================================
+    // 3. スライド ＆ ナビゲーション制御
+    // ==========================================================
     const track = document.getElementById('sliderTrack');
     const slides = Array.from(track.children);
     const dots = Array.from(document.getElementById('indicators').children);
@@ -855,11 +906,18 @@
       }
     });
 
+    // ==========================================================
+    // 4. モーダル操作 & 初回訪問フラグの保存 ＆ 遷移
+    // ==========================================================
     modalCancelBtn.addEventListener('click', () => {
       confirmModal.classList.remove('active');
     });
 
     modalOkBtn.addEventListener('click', () => {
+      // 初回訪問フラグを設定（CookieとlocalStorageの両方に保存）
+      document.cookie = "welcome_seen=true; path=/; max-age=31536000; SameSite=Lax";
+      localStorage.setItem("welcome_seen", "true");
+
       modalOkBtn.innerText = '起動中...';
       modalOkBtn.style.pointerEvents = 'none';
       
