@@ -495,6 +495,40 @@
         };
     }
 
+    async function fetchAndFillMissingChannelInfo() {
+        let rawSubs = getSubscribedChannels();
+        let updated = false;
+
+        for (let i = 0; i < rawSubs.length; i++) {
+            let item = normalizeChannelData(rawSubs[i]);
+            if (item.ucid && (!item.icon || item.name === item.ucid)) {
+                try {
+                    const resp = await fetch(`/api/channel_info?ucid=${encodeURIComponent(item.ucid)}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data && data.name) {
+                            rawSubs[i] = {
+                                ucid: item.ucid,
+                                name: data.name || item.name,
+                                icon: data.icon || item.icon,
+                                handle: data.handle || item.handle,
+                                description: data.description || item.description
+                            };
+                            updated = true;
+                        }
+                    }
+                } catch (e) {
+                    console.error("Failed to fetch channel info for", item.ucid, e);
+                }
+            }
+        }
+
+        if (updated) {
+            localStorage.setItem('subscribed_channels', JSON.stringify(rawSubs));
+            renderSubscriptions();
+        }
+    }
+
     function renderSubscriptions() {
         const rawSubs = getSubscribedChannels();
         const feed = $('#sub-feed');
@@ -657,6 +691,7 @@
         });
 
         renderSubscriptions();
+        fetchAndFillMissingChannelInfo();
     });
 </script>
 {% endblock %}
