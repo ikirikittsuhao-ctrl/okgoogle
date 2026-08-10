@@ -1,835 +1,693 @@
 import asyncio
-from datetime import datetime
-import json
-import httpx
 import logging
-from typing import Optional, Dict, Any, List, Union, Tuple
+from typing import Optional, Dict, List, Any
+from datetime import datetime, timedelta
+from dataclasses import dataclass
+
+import httpx
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
+from app.stream_production import fetch_fastest_stream_urls, fetch_comments
 from app.search import (
     fetch_invidious,
     fetch_with_inflight,
     client_session,
     get_invidious_instances_from_url,
+    INVIDIOUS_SEARCH_LIST_URL,
     INVIDIOUS_VIDEO_LIST_URL,
 )
 
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
 templates.env.add_extension("jinja2.ext.do")
 
-# ========== API設定定義 ==========
-INFO_API_CONFIG = {
-    "invidious": {
-        "priority": 1,
-        "timeout": 3.0,  # 短縮
-        "description": "Invidious 集約API",
-        "features": ["video info", "comments", "recommendations"],
-        "max_retries": 2,
-    },
-    "sia": {
-        "priority": 2,
-        "timeout": 2.5,  # 短縮
-        "description": "Sia Tube API",
-        "features": ["video info", "recommendations"],
-        "max_retries": 2,
-    },
-    "sennin": {
-        "priority": 3,
-        "timeout": 3.0,  # 短縮
-        "description": "Sennin API",
-        "features": ["video info", "extended stats"],
-        "max_retries": 1,
-    }
-}
 
-# キャッシュ設定
-CACHE_CONFIG = {
-    "video_info": 300.0,      # 5分
-    "comments": 600.0,         # 10分
-    "streams": 600.0,          # 10分
-    "recommended": 1800.0,     # 30分
-}
-
-# パフォーマンスモニタリング
-_API_STATS = {
-    "invidious": {"success": 0, "failure": 0, "avg_time": 0},
-    "sia": {"success": 0, "failure": 0, "avg_time": 0},
-    "sennin": {"success": 0, "failure": 0, "avg_time": 0},
-}
-_STATS_LOCK = asyncio.Lock()
-
-
-async def record_api_performance(api: str, success: bool, duration: float) -> None:
-    """APIパフォーマンスを記録"""
-    async with _STATS_LOCK:
-        if api not in _API_STATS:
-            return
-        
-        stats = _API_STATS[api]
-        if success:
-            stats["success"] += 1
-            # 移動平均を計算
-            total_calls = stats["success"] + stats["failure"]
-            stats["avg_time"] = (
-                stats["avg_time"] * (total_calls - 1) / total_calls +
-                duration / total_calls
-            )
-        else:
-            stats["failure"] += 1
-
-
-async def fetch_sennin_video_info(v: str) -> Optional[Dict[str, Any]]:
-    """Sennin APIから動画情報取得（最適化版）"""
-    cache_key = f"sennin_video:{v}"
-    cached = fetch_with_inflight.__self__.get_cache(cache_key) if hasattr(fetch_with_inflight, '__self__') else None
-    if cached:
-        return cached
+@dataclass
+class CacheEntry:
+    value: Any
+    expires_at: datetime
     
-    start_time = asyncio.get_event_loop().time()
+    def is_expired(self) -> bool:
+        return datetime.now() > self.expires_at
+
+
+class SimpleMemoryCache:
+    def __init__(self):
+        self._cache: Dict[str, CacheEntry] = {}
     
-    try:
-        url = f"https://discerning-adventure-production-ebfc.up.railway.app/api/video/{v}"
-        resp = await asyncio.wait_for(
-            client_session.get(url, timeout=httpx.Timeout(3.0, connect=1.0, read=2.0)),
-            timeout=3.5
-        )
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            if data and not data.get("unavailable"):
-                norm_data = normalize_sennin_video_info(data)
-                norm_data["api_used"] = "sennin"
-                
-                # キャッシュに保存
-                if hasattr(fetch_with_inflight, '__self__'):
-                    fetch_with_inflight.__self__.set_cache(cache_key, norm_data, ttl=CACHE_CONFIG["video_info"])
-                
-                duration = asyncio.get_event_loop().time() - start_time
-                await record_api_performance("sennin", True, duration)
-                return norm_data
-    
-    except asyncio.TimeoutError:
-        logger.debug(f"Sennin timeout for video {v}")
-    except Exception as e:
-        logger.debug(f"Sennin error for video {v}: {e}")
-    
-    duration = asyncio.get_event_loop().time() - start_time
-    await record_api_performance("sennin", False, duration)
-    return None
-
-
-async def fetch_sia_video(v: str) -> Optional[Dict[str, Any]]:
-    """Sia Tubeから動画情報取得（最適化版）"""
-    cache_key = f"sia_video:{v}"
-    cached = fetch_with_inflight.__self__.get_cache(cache_key) if hasattr(fetch_with_inflight, '__self__') else None
-    if cached:
-        return cached
-    
-    start_time = asyncio.get_event_loop().time()
-    
-    try:
-        url = f"https://siatube.com/api/video/{v}"
-        resp = await asyncio.wait_for(
-            client_session.get(url, timeout=httpx.Timeout(2.5, connect=1.0, read=1.5)),
-            timeout=3.0
-        )
-        
-        if resp.status_code == 200:
-            data = resp.json()
-
-            author_info = data.get("author", {}) if isinstance(data.get("author"), dict) else {}
-            author_name = author_info.get("name") or data.get("uploader") or ""
-            author_id = author_info.get("id", "")
-            author_icon = author_info.get("thumbnail", "")
-            sub_count = author_info.get("subscribers", "非公開")
-
-            if not author_name:
-                duration = asyncio.get_event_loop().time() - start_time
-                await record_api_performance("sia", False, duration)
-                return None
-
-            # 説明文の効率的な処理
-            desc_obj = data.get("description", {})
-            desc_text = (
-                desc_obj.get("text", "") if isinstance(desc_obj, dict)
-                else str(desc_obj or "")
-            )
-            desc_html = desc_text.replace("\n", "<br>")
-
-            # 関連動画の効率的な処理
-            rel_data = data.get("Related-videos") or data.get("relatedVideos") or {}
-            raw_rel = (
-                rel_data.get("relatedVideos", [])
-                if isinstance(rel_data, dict)
-                else (rel_data if isinstance(rel_data, list) else [])
-            )
-
-            recommended = _process_related_videos(raw_rel)
-
-            result = {
-                "title": data.get("title", ""),
-                "author": author_name,
-                "authorId": author_id,
-                "authorIcon": author_icon,
-                "subCountText": sub_count,
-                "viewCount": data.get("views", 0),
-                "likeCount": data.get("likes", 0),
-                "descriptionHtml": desc_html,
-                "recommendedVideos": recommended,
-                "thumbnail": data.get("thumbnail", ""),
-                "api_used": "sia",
-            }
-            
-            # キャッシュに保存
-            if hasattr(fetch_with_inflight, '__self__'):
-                fetch_with_inflight.__self__.set_cache(cache_key, result, ttl=CACHE_CONFIG["video_info"])
-            
-            duration = asyncio.get_event_loop().time() - start_time
-            await record_api_performance("sia", True, duration)
-            return result
-    
-    except asyncio.TimeoutError:
-        logger.debug(f"Sia timeout for video {v}")
-    except Exception as e:
-        logger.debug(f"Sia error for video {v}: {e}")
-    
-    duration = asyncio.get_event_loop().time() - start_time
-    await record_api_performance("sia", False, duration)
-    return None
-
-
-def _process_related_videos(raw_rel: List[Any]) -> List[Dict[str, Any]]:
-    """関連動画リストを効率的に処理"""
-    recommended = []
-    
-    for item in raw_rel:
-        if not isinstance(item, dict):
-            continue
-        
-        # サムネイル URLの取得を最適化
-        thumb_url = item.get("thumbnail", "")
-        if not thumb_url and isinstance(item.get("thumbnails"), list) and item["thumbnails"]:
-            thumb_url = item["thumbnails"][0].get("url", "")
-
-        recommended.append({
-            "video_id": item.get("videoId") or item.get("id"),
-            "title": item.get("title"),
-            "author": item.get("channelName") or item.get("author"),
-            "view_count_text": item.get("viewCountText"),
-            "thumbnail": thumb_url,
-        })
-    
-    return recommended
-
-
-def normalize_sennin_video_info(sennin_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Sennin APIレスポンスを標準形式に正規化（最適化版）"""
-    if not sennin_data or not isinstance(sennin_data, dict):
-        return {}
-
-    author_info = sennin_data.get("author", {}) if isinstance(sennin_data.get("author"), dict) else {}
-    author_name = author_info.get("name") or ""
-    author_id = author_info.get("id") or ""
-    author_icon = author_info.get("thumbnail") or ""
-    sub_count = author_info.get("subscribers") or "非公開"
-
-    # 説明文の効率的な処理
-    desc_obj = sennin_data.get("description", {})
-    if isinstance(desc_obj, dict):
-        desc_html = desc_obj.get("formatted") or (
-            desc_obj.get("text", "").replace("\n", "<br>")
-        )
-        desc_text = desc_obj.get("text", "")
-    else:
-        desc_text = str(desc_obj or "")
-        desc_html = desc_text.replace("\n", "<br>")
-
-    # 関連動画の処理
-    rel_data = sennin_data.get("Related-videos", {})
-    raw_rel = rel_data.get("relatedVideos", []) if isinstance(rel_data, dict) else []
-    recommended = _process_related_videos(raw_rel)
-
-    return {
-        "title": sennin_data.get("title", ""),
-        "author": author_name,
-        "authorId": author_id,
-        "authorIcon": author_icon,
-        "subCountText": sub_count,
-        "viewCount": (
-            sennin_data.get("views") or
-            sennin_data.get("extended_stats", {}).get("views_original", 0)
-        ),
-        "likeCount": sennin_data.get("likes", 0),
-        "description": desc_text,
-        "descriptionHtml": desc_html,
-        "recommendedVideos": recommended,
-        "thumbnail": sennin_data.get("thumbnail", ""),
-    }
-
-
-async def fetch_video_info_invidious_robust(
-    v: str,
-    force_instance: Optional[str] = None
-) -> Optional[Dict[str, Any]]:
-    """Invidious APIから堅牢に動画情報取得（最適化版）"""
-    cache_key = f"inv_video:{v}:{force_instance or ''}"
-    
-    start_time = asyncio.get_event_loop().time()
-    
-    try:
-        # 最初にデフォルトインスタンスを試行
-        res = await asyncio.wait_for(
-            fetch_invidious(
-                f"/videos/{v}",
-                force_instance=force_instance,
-                list_type="video"
-            ),
-            timeout=4.0
-        )
-        
-        if isinstance(res, dict) and not res.get("error") and (res.get("title") or res.get("videoId")):
-            res["api_used"] = "invidious"
-            duration = asyncio.get_event_loop().time() - start_time
-            await record_api_performance("invidious", True, duration)
-            return res
-    
-    except asyncio.TimeoutError:
-        logger.debug(f"Invidious primary timeout for video {v}")
-    except Exception as e:
-        logger.debug(f"Invidious primary error for video {v}: {e}")
-
-    # フォールバック: 複数のインスタンスを並列で試行
-    base_instances = await get_invidious_instances_from_url(INVIDIOUS_VIDEO_LIST_URL)
-    
-    if not base_instances:
-        duration = asyncio.get_event_loop().time() - start_time
-        await record_api_performance("invidious", False, duration)
+    def get(self, key: str) -> Optional[Any]:
+        entry = self._cache.get(key)
+        if entry and not entry.is_expired():
+            return entry.value
+        if entry:
+            del self._cache[key]
         return None
+    
+    def set(self, key: str, value: Any, ttl_seconds: int = 300) -> None:
+        self._cache[key] = CacheEntry(
+            value=value,
+            expires_at=datetime.now() + timedelta(seconds=ttl_seconds)
+        )
+    
+    def clear(self) -> None:
+        self._cache.clear()
+    
+    def cleanup_expired(self) -> None:
+        expired_keys = [
+            k for k, v in self._cache.items() 
+            if v.is_expired()
+        ]
+        for k in expired_keys:
+            del self._cache[k]
 
-    async def try_instance(instance: str) -> Optional[Dict[str, Any]]:
+
+_cache = SimpleMemoryCache()
+
+
+class NumberFormatter:
+    
+    _format_cache = {}
+    
+    @staticmethod
+    def format_subscriber_count(count_val: Any) -> str:
+        cache_key = f"fmt_{str(count_val)[:50]}"
+        if cache_key in NumberFormatter._format_cache:
+            return NumberFormatter._format_cache[cache_key]
+        
+        result = NumberFormatter._do_format(count_val)
+        NumberFormatter._format_cache[cache_key] = result
+        
+        if len(NumberFormatter._format_cache) > 1000:
+            NumberFormatter._format_cache.clear()
+        
+        return result
+    
+    @staticmethod
+    def _do_format(val: Any) -> str:
+        if val is None or val == "":
+            return "非公開"
+        
+        if isinstance(val, str):
+            return val.strip() or "非公開"
+        
+        if isinstance(val, (int, float)):
+            if val <= 0:
+                return "非公開"
+            if val >= 10_000_000:
+                return f"{val / 10_000_000:.1f}千万人".replace(".0", "")
+            elif val >= 10_000:
+                return f"{val / 10_000:.1f}万人".replace(".0", "")
+            return f"{val:,}人"
+        
+        return "非公開"
+
+
+class APIFetcher:
+    
+    TIMEOUTS = {
+        "sia": 2.0,
+        "invidious": 3.0,
+        "sennin": 4.0,
+    }
+    
+    MAX_RETRIES = 2
+    RETRY_BACKOFF = 0.5
+    
+    @staticmethod
+    async def fetch_sia_video_info(v: str, retries: int = 0) -> Optional[Dict]:
+        cache_key = f"sia_video_{v}"
+        
+        cached = _cache.get(cache_key)
+        if cached:
+            logger.debug(f"Cache hit: {cache_key}")
+            return cached
+        
         try:
-            url = f"{instance.rstrip('/')}/api/v1/videos/{v}"
-            resp = await asyncio.wait_for(
-                client_session.get(
-                    url,
-                    timeout=httpx.Timeout(3.0, connect=1.0, read=2.0)
-                ),
-                timeout=3.5
+            url = f"https://siatube.com/api/video/{v}"
+            resp = await client_session.get(
+                url,
+                timeout=APIFetcher.TIMEOUTS["sia"]
             )
             
             if resp.status_code == 200:
                 data = resp.json()
-                if isinstance(data, dict) and not data.get("error") and (data.get("title") or data.get("videoId")):
-                    data["api_used"] = "invidious"
+                if APIFetcher._is_valid_video_data(data):
+                    _cache.set(cache_key, data, ttl_seconds=600)
                     return data
-        except Exception:
-            pass
+        
+        except asyncio.TimeoutError:
+            logger.warning(f"Sia timeout for {v}")
+            if retries < APIFetcher.MAX_RETRIES:
+                await asyncio.sleep(APIFetcher.RETRY_BACKOFF * (retries + 1))
+                return await APIFetcher.fetch_sia_video_info(v, retries + 1)
+        
+        except Exception as e:
+            logger.error(f"Sia fetch error for {v}: {e}")
+        
         return None
-
-    # 最初の5インスタンスを並列で試行
-    tasks = [try_instance(inst) for inst in base_instances[:5]]
-    results = await asyncio.gather(*tasks, return_exceptions=False)
     
-    for result in results:
-        if result:
-            duration = asyncio.get_event_loop().time() - start_time
-            await record_api_performance("invidious", True, duration)
-            return result
+    @staticmethod
+    async def fetch_sennin_video_info(v: str, retries: int = 0) -> Optional[Dict]:
+        cache_key = f"sennin_video_{v}"
+        
+        cached = _cache.get(cache_key)
+        if cached:
+            logger.debug(f"Cache hit: {cache_key}")
+            return cached
+        
+        try:
+            url = f"https://discerning-adventure-production-ebfc.up.railway.app/api/video/{v}"
+            resp = await client_session.get(
+                url,
+                timeout=APIFetcher.TIMEOUTS["sennin"]
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                if APIFetcher._is_valid_video_data(data):
+                    _cache.set(cache_key, data, ttl_seconds=600)
+                    return data
+        
+        except asyncio.TimeoutError:
+            logger.warning(f"Sennin timeout for {v}")
+            if retries < APIFetcher.MAX_RETRIES:
+                await asyncio.sleep(APIFetcher.RETRY_BACKOFF * (retries + 1))
+                return await APIFetcher.fetch_sennin_video_info(v, retries + 1)
+        
+        except Exception as e:
+            logger.error(f"Sennin fetch error for {v}: {e}")
+        
+        return None
+    
+    @staticmethod
+    def _is_valid_video_data(data: Any) -> bool:
+        return isinstance(data, dict) and any(
+            key in data for key in ["title", "videoDetails", "streamingData", "videoId", "author"]
+        )
 
-    duration = asyncio.get_event_loop().time() - start_time
-    await record_api_performance("invidious", False, duration)
-    return None
+
+class InvidiousVideoFetcher:
+    
+    @staticmethod
+    async def fetch_video_data(
+        v: str,
+        force_instance: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
+        
+        try:
+            video_data = await asyncio.wait_for(
+                fetch_invidious(f"/videos/{v}", force_instance=force_instance),
+                timeout=APIFetcher.TIMEOUTS["invidious"] + 1.0
+            )
+            return video_data
+        
+        except asyncio.TimeoutError:
+            logger.warning(f"Invidious timeout for {v}")
+            return None
+        
+        except Exception as e:
+            logger.error(f"Invidious fetch error for {v}: {e}")
+            return None
 
 
-async def fetch_video_info(
+class DataParser:
+    
+    @staticmethod
+    def extract_video_title(video_data: Dict) -> str:
+        for key in ("title", "videoDetails", "titleText"):
+            if value := video_data.get(key):
+                if isinstance(value, dict):
+                    return value.get("text", value.get("title", ""))
+                return str(value)
+        return ""
+    
+    @staticmethod
+    def extract_author(video_data: Dict) -> str:
+        for key in ("author", "authorName", "channelName"):
+            if value := video_data.get(key):
+                return value
+        return ""
+    
+    @staticmethod
+    def extract_author_id(video_data: Dict) -> str:
+        for key in ("authorId", "channelId", "ucid"):
+            if value := video_data.get(key):
+                return value
+        return ""
+    
+    @staticmethod
+    def extract_author_icon(video_data: Dict) -> str:
+        if thumbnails := video_data.get("authorThumbnails"):
+            if isinstance(thumbnails, list) and thumbnails:
+                return thumbnails[-1].get("url", "")
+        
+        for key in ("authorIcon", "channelThumbnail", "authorAvatar"):
+            if value := video_data.get(key):
+                return value
+        return ""
+    
+    @staticmethod
+    def extract_description(video_data: Dict) -> str:
+        for key in ("description", "descriptionHtml", "descriptionSnippet"):
+            if value := video_data.get(key):
+                return value
+        return ""
+    
+    @staticmethod
+    def extract_view_count(video_data: Dict) -> int:
+        for key in ("viewCount", "views", "likeCount"):
+            if value := video_data.get(key):
+                if isinstance(value, int):
+                    return value
+                try:
+                    return int(str(value).replace(",", ""))
+                except:
+                    pass
+        return 0
+    
+    @staticmethod
+    def extract_like_count(video_data: Dict) -> int:
+        for key in ("likeCount", "likes", "rating"):
+            if value := video_data.get(key):
+                if isinstance(value, int):
+                    return value
+                try:
+                    return int(str(value).replace(",", ""))
+                except:
+                    pass
+        return 0
+    
+    @staticmethod
+    def extract_video_streams(video_data: Dict) -> List[Dict]:
+        streams = []
+        
+        if formats := video_data.get("formatStreams"):
+            for fmt in formats:
+                if url := fmt.get("url"):
+                    streams.append({
+                        "url": url,
+                        "resolution": fmt.get("qualityLabel", fmt.get("quality", "Unknown")),
+                        "format": fmt.get("type", "mp4"),
+                        "audioUrl": "",
+                    })
+        
+        if adaptive := video_data.get("adaptiveFormats"):
+            for fmt in adaptive:
+                if url := fmt.get("url"):
+                    streams.append({
+                        "url": url,
+                        "resolution": fmt.get("qualityLabel", fmt.get("quality", "Unknown")),
+                        "format": fmt.get("type", "webm"),
+                        "audioUrl": "",
+                    })
+        
+        return streams
+
+
+async def fetch_video_info_best_api(
     v: str,
+    api: Optional[str] = None,
     force_instance: Optional[str] = None,
-    api: Optional[str] = None
-) -> Optional[Dict[str, Any]]:
-    """動画情報取得（API選択最適化版）"""
-    cache_key = f"video_info:{v}:{force_instance or ''}:{api or ''}"
+) -> Dict[str, Any]:
+    cache_key = f"video_best:{v}:{api or ''}:{force_instance or ''}"
 
-    async def _do_fetch() -> Optional[Dict[str, Any]]:
-        if api == "invidious":
-            return await fetch_video_info_invidious_robust(v, force_instance=force_instance)
-        elif api == "sia":
-            result = await fetch_sia_video(v)
-            if result:
-                return result
-            return await fetch_video_info_invidious_robust(v, force_instance=force_instance)
+    async def _do_fetch() -> Dict[str, Any]:
+        result = {
+            "title": "",
+            "author": "",
+            "author_id": "",
+            "author_icon": "",
+            "description": "",
+            "view_count": 0,
+            "like_count": 0,
+            "streams": [],
+            "info_api_used": "unknown",
+        }
+
+        if api == "sia":
+            try:
+                sia_data = await APIFetcher.fetch_sia_video_info(v)
+                if sia_data:
+                    result.update({
+                        "title": DataParser.extract_video_title(sia_data),
+                        "author": DataParser.extract_author(sia_data),
+                        "author_id": DataParser.extract_author_id(sia_data),
+                        "author_icon": DataParser.extract_author_icon(sia_data),
+                        "description": DataParser.extract_description(sia_data),
+                        "view_count": DataParser.extract_view_count(sia_data),
+                        "like_count": DataParser.extract_like_count(sia_data),
+                        "streams": DataParser.extract_video_streams(sia_data),
+                        "info_api_used": "sia",
+                    })
+                    return result
+            except Exception:
+                pass
+        
         elif api == "sennin":
-            result = await fetch_sennin_video_info(v)
-            if result:
-                return result
-            return await fetch_video_info_invidious_robust(v, force_instance=force_instance)
-
-        # デフォルト: 並列でトライ（最速を使用）
-        # APIのパフォーマンスに基づいて優先順位を動的に調整
-        invidious_task = fetch_video_info_invidious_robust(v, force_instance=force_instance)
-        sia_task = fetch_sia_video(v)
-        sennin_task = fetch_sennin_video_info(v)
+            try:
+                sennin_data = await APIFetcher.fetch_sennin_video_info(v)
+                if sennin_data:
+                    result.update({
+                        "title": DataParser.extract_video_title(sennin_data),
+                        "author": DataParser.extract_author(sennin_data),
+                        "author_id": DataParser.extract_author_id(sennin_data),
+                        "author_icon": DataParser.extract_author_icon(sennin_data),
+                        "description": DataParser.extract_description(sennin_data),
+                        "view_count": DataParser.extract_view_count(sennin_data),
+                        "like_count": DataParser.extract_like_count(sennin_data),
+                        "streams": DataParser.extract_video_streams(sennin_data),
+                        "info_api_used": "sennin",
+                    })
+                    return result
+            except Exception:
+                pass
+        
+        elif api == "invidious":
+            try:
+                inv_data = await InvidiousVideoFetcher.fetch_video_data(v, force_instance=force_instance)
+                if inv_data:
+                    result.update({
+                        "title": DataParser.extract_video_title(inv_data),
+                        "author": DataParser.extract_author(inv_data),
+                        "author_id": DataParser.extract_author_id(inv_data),
+                        "author_icon": DataParser.extract_author_icon(inv_data),
+                        "description": DataParser.extract_description(inv_data),
+                        "view_count": DataParser.extract_view_count(inv_data),
+                        "like_count": DataParser.extract_like_count(inv_data),
+                        "streams": DataParser.extract_video_streams(inv_data),
+                        "info_api_used": "invidious",
+                    })
+                    return result
+            except Exception:
+                pass
 
         tasks = {
-            invidious_task: "invidious",
-            sia_task: "sia",
-            sennin_task: "sennin",
-        }
-
-        for coro in asyncio.as_completed(tasks.keys(), timeout=5.0):
-            try:
-                result = await coro
-                if result:
-                    return result
-            except asyncio.TimeoutError:
-                break
-            except Exception:
-                continue
-
-        return None
-
-    return await fetch_with_inflight(
-        cache_key,
-        _do_fetch,
-        ttl=CACHE_CONFIG["video_info"],
-        retry_count=1  # リトライは最小限に
-    )
-
-
-def extract_invidious_streams(v_data: Dict[str, Any]) -> Dict[str, List]:
-    """Invidious動画データからストリーム情報を抽出（最適化版）"""
-    if not v_data:
-        return {"streamUrls": [], "videoUrls": []}
-
-    adaptive = v_data.get("adaptiveFormats", [])
-    format_streams = v_data.get("formatStreams", [])
-
-    # 音声URLの取得を最適化（キャッシュ）
-    audio_url = None
-    for f in adaptive:
-        if "audio" in f.get("type", ""):
-            if f.get("language") == "ja":
-                audio_url = f.get("url")
-                break
-    
-    if not audio_url:
-        for f in adaptive:
-            if "audio" in f.get("type", ""):
-                audio_url = f.get("url")
-                break
-
-    # ストリームURLを効率的に生成
-    stream_urls = [
-        {
-            "url": fmt.get("url"),
-            "resolution": fmt.get("qualityLabel"),
-            "format": "mp4/mixed",
-            "audioUrl": "",
-        }
-        for fmt in format_streams
-    ]
-
-    # WebM映像のみ
-    stream_urls.extend([
-        {
-            "url": fmt.get("url"),
-            "resolution": fmt.get("qualityLabel"),
-            "format": "webm/videoOnly",
-            "audioUrl": audio_url,
-        }
-        for fmt in adaptive 
-        if "video" in fmt.get("type", "") and "webm" in fmt.get("container", "")
-    ])
-
-    video_urls = [fmt.get("url") for fmt in format_streams] or [
-        fmt.get("url") for fmt in adaptive if "video" in fmt.get("type", "")
-    ]
-
-    return {"streamUrls": stream_urls, "videoUrls": video_urls}
-
-
-def process_comments(comment_data: Any) -> List[Dict[str, Any]]:
-    """コメントデータを標準形式に処理（最適化版）"""
-    if isinstance(comment_data, Exception) or not comment_data:
-        return []
-
-    # Sennin形式のコメント
-    if (
-        isinstance(comment_data, dict) and
-        comment_data.get("success") is True and
-        isinstance(comment_data.get("comments"), list)
-    ):
-        return normalize_sennin_comments(comment_data)
-
-    # 汎用コメント処理
-    comments = (
-        comment_data.get("comments", [])
-        if isinstance(comment_data, dict)
-        else (comment_data if isinstance(comment_data, list) else [])
-    )
-    
-    processed = []
-    for c in comments:
-        if not isinstance(c, dict):
-            continue
-        
-        # コメント正規化を効率化
-        processed_comment = _normalize_comment(c)
-        if processed_comment:
-            processed.append(processed_comment)
-
-    return processed
-
-
-def _normalize_comment(comment: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """個別のコメントを正規化"""
-    item = dict(comment)
-
-    # 作成者情報の正規化
-    author_obj = item.get("author")
-    author_icon = ""
-    
-    if isinstance(author_obj, dict):
-        item["author"] = author_obj.get("name", "")
-        author_icon = (
-            author_obj.get("avatar") or
-            author_obj.get("authorIcon") or
-            item.get("avatar", "")
-        )
-        item["authorId"] = author_obj.get("channelId", "")
-    else:
-        author_thumbs = item.get("authorThumbnails", [])
-        if author_thumbs and isinstance(author_thumbs, list):
-            author_icon = author_thumbs[-1].get("url", "")
-
-    # アイコンを統一
-    item["authorIcon"] = author_icon or item.get("authorIcon") or item.get("avatar", "")
-    item["authorThumbnail"] = item["authorIcon"]
-    item["avatar"] = item["authorIcon"]
-
-    # authorThumbnailsを統一
-    if not isinstance(item.get("authorThumbnails"), list):
-        if item["authorIcon"]:
-            item["authorThumbnails"] = [{"url": item["authorIcon"]}]
-        else:
-            item["authorThumbnails"] = []
-
-    # コンテンツ正規化
-    text_str = item.get("text") or item.get("content") or ""
-    if "contentHtml" not in item:
-        item["contentHtml"] = text_str.replace("\n", "<br>")
-    if "content" not in item:
-        item["content"] = text_str
-
-    # 公開日時正規化
-    pub_time = item.get("publishedTime") or item.get("published") or item.get("publishedText", "")
-    item["publishedTime"] = pub_time
-    item["publishedText"] = pub_time
-
-    # いいね数正規化
-    likes_obj = item.get("likes")
-    if isinstance(likes_obj, dict):
-        item["likeCount"] = likes_obj.get("count", 0)
-
-    return item
-
-
-def normalize_sennin_comments(sennin_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Sennin APIコメントを標準形式に正規化（最適化版）"""
-    if not sennin_data or not isinstance(sennin_data, dict):
-        return []
-
-    comments = sennin_data.get("comments", [])
-    if not isinstance(comments, list):
-        return []
-
-    processed = []
-    for c in comments:
-        if not isinstance(c, dict):
-            continue
-
-        author_info = c.get("author", {}) if isinstance(c.get("author"), dict) else {}
-        likes_info = c.get("likes", {}) if isinstance(c.get("likes"), dict) else {}
-        replies_info = c.get("replies", {}) if isinstance(c.get("replies"), dict) else {}
-
-        author_name = author_info.get("name") or (
-            c.get("author") if isinstance(c.get("author"), str) else ""
-        )
-        author_icon = author_info.get("avatar") or c.get("authorIcon") or ""
-        author_id = author_info.get("channelId") or c.get("authorId") or ""
-        text_content = c.get("text") or c.get("content") or ""
-
-        processed.append({
-            "commentId": c.get("commentId", ""),
-            "author": author_name,
-            "authorId": author_id,
-            "authorIcon": author_icon,
-            "authorThumbnail": author_icon,
-            "authorThumbnails": [{"url": author_icon}] if author_icon else [],
-            "content": text_content,
-            "contentHtml": text_content.replace("\n", "<br>"),
-            "publishedTime": c.get("publishedTime", ""),
-            "publishedText": c.get("publishedTime", ""),
-            "likeCount": (
-                likes_info.get("count") if isinstance(likes_info, dict)
-                else c.get("likes", 0)
+            "invidious": asyncio.create_task(
+                InvidiousVideoFetcher.fetch_video_data(v, force_instance=force_instance)
             ),
-            "replyCount": (
-                replies_info.get("count") if isinstance(replies_info, dict)
-                else c.get("replies", 0)
-            ),
-            "isCreator": author_info.get("creator", False) if isinstance(author_info, dict) else False,
-            "isVerified": author_info.get("verified", False) if isinstance(author_info, dict) else False,
-        })
+            "sia": asyncio.create_task(APIFetcher.fetch_sia_video_info(v)),
+            "sennin": asyncio.create_task(APIFetcher.fetch_sennin_video_info(v)),
+        }
 
-    return processed
-
-
-@router.get("/shorts/{v}", response_class=HTMLResponse)
-async def shorts_player(
-    request: Request,
-    v: str,
-    force_instance: Optional[str] = Query(None),
-    api: Optional[str] = Query(None),
-):
-    """Shorts（短編）プレイヤーエンドポイント（高速化版）"""
-    try:
-        from app.stream import fetch_fastest_stream_urls, fetch_comments
-        
-        # 複数タスクを並列実行
-        tasks = (
-            fetch_video_info(v, force_instance=force_instance, api=api),
-            fetch_fastest_stream_urls(v, api=api, force_instance=force_instance),
-            fetch_comments(v, force_instance=force_instance, api=api),
+        done, pending = await asyncio.wait(
+            tasks.values(),
+            timeout=4.0,
+            return_when=asyncio.FIRST_COMPLETED,
         )
 
-        video_data, stream_data, comment_data = await asyncio.gather(
-            *tasks, return_exceptions=True
-        )
+        for name, task in tasks.items():
+            if task in done:
+                try:
+                    data = task.result()
+                    if data:
+                        result.update({
+                            "title": DataParser.extract_video_title(data),
+                            "author": DataParser.extract_author(data),
+                            "author_id": DataParser.extract_author_id(data),
+                            "author_icon": DataParser.extract_author_icon(data),
+                            "description": DataParser.extract_description(data),
+                            "view_count": DataParser.extract_view_count(data),
+                            "like_count": DataParser.extract_like_count(data),
+                            "streams": DataParser.extract_video_streams(data),
+                            "info_api_used": name,
+                        })
+                        for t in pending:
+                            t.cancel()
+                        return result
+                except Exception:
+                    continue
 
-        if isinstance(video_data, Exception) and isinstance(stream_data, Exception):
-            raise video_data
+        for task in pending:
+            task.cancel()
 
-        v_data = video_data if isinstance(video_data, dict) else {}
-        s_data = stream_data if isinstance(stream_data, dict) else {}
+        return result
 
-        # ビデオURLの取得
-        video_urls = s_data.get("videoUrls", [])
-        if not video_urls and v_data:
-            invidious_streams = extract_invidious_streams(v_data)
-            video_urls = invidious_streams.get("videoUrls", [])
-
-        formatted_comments = process_comments(comment_data)
-
-        info_api_used = v_data.get("api_used", "unknown")
-        stream_api_used = s_data.get("stream_api_used", "unknown")
-
-        return templates.TemplateResponse(
-            "short.html",
-            {
-                "request": request,
-                "videoid": v,
-                "video_title": v_data.get("title", ""),
-                "videourls": video_urls,
-                "author": v_data.get("author", ""),
-                "view_count": v_data.get("viewCount", 0),
-                "like_count": v_data.get("likeCount", 0),
-                "description": (
-                    v_data.get("descriptionHtml") or
-                    v_data.get("description", "").replace("\n", "<br>")
-                ),
-                "comments": formatted_comments,
-                "info_api_used": info_api_used,
-                "stream_api_used": stream_api_used,
-                "api_used": info_api_used,
-            },
-        )
-    
-    except httpx.TimeoutException:
-        logger.error(f"Timeout in shorts_player for video {v}")
-        return templates.TemplateResponse("apitimeout.html", {"request": request})
-    except Exception as e:
-        logger.error(f"Error in shorts_player for video {v}: {e}")
-        fallback_instances = await get_invidious_instances_from_url(
-            INVIDIOUS_VIDEO_LIST_URL
-        )
-        return templates.TemplateResponse(
-            "apiallerror.html",
-            {"request": request, "instances": fallback_instances},
-        )
+    return await fetch_with_inflight(cache_key, _do_fetch, ttl=180.0)
 
 
 @router.get("/watch", response_class=HTMLResponse)
 async def watch(
     request: Request,
     v: str = Query(...),
-    list: Optional[str] = Query(None),
-    force_instance: Optional[str] = Query(None),
-    api: Optional[str] = Query(None),
+    list: str = Query(None),
+    info_api: str = Query(None),
+    stream_api: str = Query(None),
+    force_instance: str = Query(None),
 ):
-    """動画ウォッチエンドポイント（高速化・安定化版）"""
     try:
-        from app.stream import fetch_fastest_stream_urls, fetch_comments
-        
-        # 複数タスクを並列実行で高速化
-        info_task = fetch_video_info(v, force_instance=force_instance, api=api)
-        stream_task = fetch_fastest_stream_urls(v, api=api, force_instance=force_instance)
-        comment_task = fetch_comments(v, force_instance=force_instance, api=api)
+        logger.info(f"Watch request: v={v}, info_api={info_api}, stream_api={stream_api}")
 
-        async def _fetch_playlist():
-            if not list:
-                return None
-            try:
-                res = await asyncio.wait_for(
-                    fetch_invidious(f"/playlists/{list}", force_instance=force_instance),
-                    timeout=4.0
-                )
-                if isinstance(res, dict) and not res.get("error"):
-                    return res
-            except Exception as e:
-                logger.debug(f"Playlist error: {e}")
-            return None
-
-        playlist_task = _fetch_playlist()
-
-        video_data, stream_res, comment_data, playlist_data = await asyncio.gather(
-            info_task, stream_task, comment_task, playlist_task, return_exceptions=True
+        video_info_task = asyncio.create_task(
+            fetch_video_info_best_api(v, api=info_api, force_instance=force_instance)
         )
 
-        if isinstance(video_data, Exception) and isinstance(stream_res, Exception):
-            raise video_data
-
-        v_data = video_data if isinstance(video_data, dict) else {}
-        s_data = stream_res if isinstance(stream_res, dict) else {}
-        p_data = playlist_data if isinstance(playlist_data, dict) else {}
-
-        # プレイリスト動画の整理
-        playlist_videos = []
-        for item in p_data.get("videos", []):
-            if isinstance(item, dict):
-                playlist_videos.append({
-                    "videoId": item.get("videoId"),
-                    "title": item.get("title"),
-                    "author": item.get("author")
-                })
-
-        # ストリーム情報の取得
-        stream_urls = s_data.get("streamUrls", [])
-        video_urls = s_data.get("videoUrls", [])
-
-        if not stream_urls and v_data:
-            invidious_streams = extract_invidious_streams(v_data)
-            stream_urls = invidious_streams.get("streamUrls", [])
-            video_urls = invidious_streams.get("videoUrls", [])
-
-        # 関連動画の処理
-        recommended = []
-        for rec in v_data.get("recommendedVideos", []):
-            if isinstance(rec, dict):
-                recommended.append({
-                    "video_id": rec.get("video_id") or rec.get("videoId"),
-                    "title": rec.get("title"),
-                    "author": rec.get("author"),
-                    "view_count_text": rec.get("view_count_text") or rec.get("viewCountText"),
-                    "thumbnail": rec.get("thumbnail", ""),
-                })
-
-        # 作成者アイコンの取得
-        author_icon = v_data.get("authorIcon")
-        if not author_icon:
-            author_thumbs = v_data.get("authorThumbnails", [])
-            author_icon = author_thumbs[-1]["url"] if author_thumbs else ""
-
-        formatted_comments = process_comments(comment_data)
-
-        info_api_used = v_data.get("api_used", "unknown")
-        stream_api_used = s_data.get("stream_api_used", "unknown")
-
-        response = templates.TemplateResponse(
-            "watch.html",
-            {
-                "request": request,
-                "videoid": v,
-                "video_title": v_data.get("title") or s_data.get("title", ""),
-                "videourls": video_urls,
-                "streamUrls": stream_urls,
-                "author": v_data.get("author") or s_data.get("author", ""),
-                "author_id": v_data.get("authorId") or s_data.get("authorId", ""),
-                "author_icon": author_icon,
-                "subscribers_count": v_data.get("subCountText", "非公開"),
-                "view_count": v_data.get("viewCount", s_data.get("viewCount", 0)),
-                "like_count": v_data.get("likeCount", s_data.get("likeCount", 0)),
-                "description": (
-                    v_data.get("descriptionHtml") or
-                    s_data.get("descriptionHtml") or
-                    v_data.get("description", "").replace("\n", "<br>")
-                ),
-                "recommended_videos": recommended,
-                "comments": formatted_comments,
-                "youtube_url": f"https://www.youtube.com/watch?v={v}",
-                "info_api_used": info_api_used,
-                "stream_api_used": stream_api_used,
-                "api_used": info_api_used,
-                "playlist_id": list,
-                "playlist_title": p_data.get("title", ""),
-                "playlist_videos": playlist_videos,
-            },
+        stream_urls_task = asyncio.create_task(
+            fetch_fastest_stream_urls(v, api=stream_api, force_instance=force_instance)
         )
 
-        # 視聴履歴をクッキーに保存（エラー時も無視）
-        try:
-            history_json = request.cookies.get("history", "[]")
-            history = json.loads(history_json)
-            
-            # 重複を削除
-            history = [item for item in history if item.get("videoId") != v]
-            
-            history.append({
-                "videoId": v,
-                "title": v_data.get("title", ""),
-                "author": v_data.get("author", ""),
-                "added_at": datetime.now().isoformat(),
-            })
-            
-            # 最新50件を保持
-            if len(history) > 50:
-                history = history[-50:]
-            
-            response.set_cookie(
-                key="history",
-                value=json.dumps(history),
-                max_age=2592000,
-                httponly=True,
-                samesite="Lax",
-            )
-        except Exception as e:
-            logger.debug(f"Failed to update history: {e}")
+        comments_task = asyncio.create_task(
+            fetch_comments(v, force_instance=force_instance, api=info_api)
+        )
 
-        return response
+        video_info, stream_urls_data, comments_data = await asyncio.gather(
+            video_info_task,
+            stream_urls_task,
+            comments_task,
+            return_exceptions=False
+        )
 
-    except httpx.TimeoutException:
-        logger.error(f"Timeout in watch for video {v}")
+        video_urls = []
+        stream_urls = []
+        stream_api_used = "unknown"
+
+        if stream_urls_data:
+            stream_urls = stream_urls_data.get("streamUrls", [])
+            video_urls = stream_urls_data.get("videoUrls", [])
+            stream_api_used = stream_urls_data.get("stream_api_used", "unknown")
+
+        info_api_used = video_info.get("info_api_used", "unknown")
+
+        context = {
+            "request": request,
+            "videoid": v,
+            "video_title": video_info.get("title", ""),
+            "author": video_info.get("author", ""),
+            "author_id": video_info.get("author_id", ""),
+            "author_icon": video_info.get("author_icon", ""),
+            "subscribers_count": "非公開",
+            "description": video_info.get("description", ""),
+            "view_count": f"{video_info.get('view_count', 0):,}",
+            "like_count": video_info.get("like_count", 0),
+            "videourls": video_urls,
+            "streamUrls": stream_urls,
+            "youtube_url": f"https://www.youtube.com/watch?v={v}",
+            "comments": comments_data.get("comments", []) if comments_data else [],
+            "info_api_used": info_api_used,
+            "stream_api_used": stream_api_used,
+            "playlist_id": list or "",
+            "playlist_title": "",
+            "playlist_videos": [],
+            "recommended_videos": [],
+        }
+
+        logger.info(
+            f"Watch loaded: v={v}, info_api={info_api_used}, "
+            f"stream_api={stream_api_used}, title={context['video_title']}"
+        )
+
+        return templates.TemplateResponse("watch_production.html", context)
+
+    except asyncio.TimeoutError:
+        logger.warning(f"Timeout fetching video: {v}")
         return templates.TemplateResponse("apitimeout.html", {"request": request})
+
     except Exception as e:
-        logger.error(f"Error in watch for video {v}: {e}")
-        fallback_instances = await get_invidious_instances_from_url(
-            INVIDIOUS_VIDEO_LIST_URL
-        )
+        logger.error(f"Watch fetch failed for {v}: {e}", exc_info=True)
         return templates.TemplateResponse(
             "apiallerror.html",
-            {"request": request, "instances": fallback_instances},
+            {"request": request, "error": str(e)},
         )
 
 
-@router.get("/api/stats")
-async def get_api_stats():
-    """APIパフォーマンス統計を取得"""
-    async with _STATS_LOCK:
+@router.get("/api/watch/{v}")
+async def api_watch(
+    v: str,
+    info_api: str = Query(None),
+    stream_api: str = Query(None),
+    force_instance: str = Query(None),
+):
+    try:
+        logger.info(f"API Watch request: v={v}, info_api={info_api}, stream_api={stream_api}")
+
+        video_info_task = asyncio.create_task(
+            fetch_video_info_best_api(v, api=info_api, force_instance=force_instance)
+        )
+
+        stream_urls_task = asyncio.create_task(
+            fetch_fastest_stream_urls(v, api=stream_api, force_instance=force_instance)
+        )
+
+        comments_task = asyncio.create_task(
+            fetch_comments(v, force_instance=force_instance, api=info_api)
+        )
+
+        video_info, stream_urls_data, comments_data = await asyncio.gather(
+            video_info_task,
+            stream_urls_task,
+            comments_task,
+            return_exceptions=False
+        )
+
         return {
-            "stats": dict(_API_STATS),
-            "timestamp": datetime.now().isoformat(),
+            "videoid": v,
+            "video_title": video_info.get("title", ""),
+            "author": video_info.get("author", ""),
+            "author_id": video_info.get("author_id", ""),
+            "author_icon": video_info.get("author_icon", ""),
+            "description": video_info.get("description", ""),
+            "view_count": video_info.get("view_count", 0),
+            "like_count": video_info.get("like_count", 0),
+            "video_urls": stream_urls_data.get("videoUrls", []) if stream_urls_data else [],
+            "stream_urls": stream_urls_data.get("streamUrls", []) if stream_urls_data else [],
+            "comments": comments_data.get("comments", []) if comments_data else [],
+            "info_api_used": video_info.get("info_api_used", "unknown"),
+            "stream_api_used": stream_urls_data.get("stream_api_used", "unknown") if stream_urls_data else "unknown",
+        }
+
+    except Exception as e:
+        logger.error(f"API Watch failed for {v}: {e}", exc_info=True)
+        return {
+            "error": str(e),
+            "videoid": v,
+            "info_api_used": "error",
+            "stream_api_used": "error",
+        }
+
+
+@router.get("/api/stream/{v}")
+async def api_stream(
+    v: str,
+    stream_api: str = Query(None),
+    force_instance: str = Query(None),
+):
+    try:
+        logger.info(f"API Stream request: v={v}, stream_api={stream_api}")
+
+        stream_urls_data = await fetch_fastest_stream_urls(
+            v, api=stream_api, force_instance=force_instance
+        )
+
+        if stream_urls_data:
+            return {
+                "videoid": v,
+                "stream_urls": stream_urls_data.get("streamUrls", []),
+                "video_urls": stream_urls_data.get("videoUrls", []),
+                "stream_api_used": stream_urls_data.get("stream_api_used", "unknown"),
             }
+
+        return {
+            "videoid": v,
+            "stream_urls": [],
+            "video_urls": [],
+            "stream_api_used": "error",
+            "error": "Failed to fetch streams",
+        }
+
+    except Exception as e:
+        logger.error(f"API Stream failed for {v}: {e}", exc_info=True)
+        return {
+            "videoid": v,
+            "error": str(e),
+            "stream_api_used": "error",
+        }
+
+
+@router.get("/api/info/{v}")
+async def api_info(
+    v: str,
+    info_api: str = Query(None),
+    force_instance: str = Query(None),
+):
+    try:
+        logger.info(f"API Info request: v={v}, info_api={info_api}")
+
+        video_info = await fetch_video_info_best_api(
+            v, api=info_api, force_instance=force_instance
+        )
+
+        return {
+            "videoid": v,
+            "title": video_info.get("title", ""),
+            "author": video_info.get("author", ""),
+            "author_id": video_info.get("author_id", ""),
+            "author_icon": video_info.get("author_icon", ""),
+            "description": video_info.get("description", ""),
+            "view_count": video_info.get("view_count", 0),
+            "like_count": video_info.get("like_count", 0),
+            "info_api_used": video_info.get("info_api_used", "unknown"),
+        }
+
+    except Exception as e:
+        logger.error(f"API Info failed for {v}: {e}", exc_info=True)
+        return {
+            "videoid": v,
+            "error": str(e),
+            "info_api_used": "error",
+        }
+
+
+@router.get("/api/comments/{v}")
+async def api_comments(
+    v: str,
+    info_api: str = Query(None),
+    force_instance: str = Query(None),
+):
+    try:
+        logger.info(f"API Comments request: v={v}, info_api={info_api}")
+
+        comments_data = await fetch_comments(
+            v, force_instance=force_instance, api=info_api
+        )
+
+        if comments_data:
+            return {
+                "videoid": v,
+                "comments": comments_data.get("comments", []),
+            }
+
+        return {
+            "videoid": v,
+            "comments": [],
+        }
+
+    except Exception as e:
+        logger.error(f"API Comments failed for {v}: {e}", exc_info=True)
+        return {
+            "videoid": v,
+            "error": str(e),
+            "comments": [],
+        }
+
+
+@router.get("/cache/clear")
+async def clear_cache():
+    _cache.clear()
+    logger.info("Cache cleared")
+    return {"status": "cleared"}
+
+
+@router.get("/cache/stats")
+async def cache_stats():
+    return {
+        "cache_size": len(_cache._cache),
+        "expired_entries": sum(
+            1 for entry in _cache._cache.values()
+            if entry.is_expired()
+        ),
+        "timestamp": datetime.now().isoformat(),
+    }
