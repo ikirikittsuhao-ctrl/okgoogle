@@ -15,7 +15,7 @@ from app.channel import router as channel_router
 
 app = FastAPI()
 
-# --- 画像等の静的ファイル配信ルートの追加 ---
+# --- 画像等の静的ファイル配信ルートの追加（imgディレクトリ以下全体および個別パスへの対応） ---
 app.mount("/img", StaticFiles(directory="img"), name="img")
 
 templates = Jinja2Templates(directory="templates")
