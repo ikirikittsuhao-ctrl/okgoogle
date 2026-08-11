@@ -193,40 +193,69 @@ async def fetch_shorts_next_page(contKey: str = Query(...)):
 
 
 def check_short_eligibility(item: Dict[str, Any]) -> bool:
+    """Shortsの対象かどうかを判定する（より寛容な判定）"""
+    if not isinstance(item, dict):
+        return False
+
+    # ShortsLockupView は確実にShorts
     if item.get("type") == "ShortsLockupView":
         return True
 
+    # on_tap_endpoint で videoId があれば Shorts の可能性が高い
     on_tap = item.get("on_tap_endpoint") or {}
-    if isinstance(on_tap, dict) and (on_tap.get("payload") or {}).get("videoId"):
-        return True
+    if isinstance(on_tap, dict):
+        payload = on_tap.get("payload") or {}
+        if isinstance(payload, dict) and payload.get("videoId"):
+            return True
 
+    # reelWatchEndpoint は Shorts
     ep = item.get("endpoint") or {}
     if isinstance(ep, dict) and ep.get("name") == "reelWatchEndpoint":
         return True
 
+    # thumbnail_overlays で SHORTS タグがあれば Shorts
     for ov in (item.get("thumbnail_overlays") or []):
         if isinstance(ov, dict) and ov.get("style") == "SHORTS":
             return True
 
+    # title に #shorts があれば Shorts
     title_field = item.get("title") or {}
     title_text = (title_field.get("text", "") if isinstance(title_field, dict) else str(title_field)).lower()
     if "#shorts" in title_text:
         return True
 
+    # duration が 90秒以下なら Shorts の可能性
     dur = item.get("duration")
-    dur_text = dur.get("text") or dur.get("simpleText", "") if isinstance(dur, dict) else ""
-    secs = convert_timestamp_to_seconds(dur_text)
-    return 0 < secs <= 90
+    if dur:
+        dur_text = dur.get("text") or dur.get("simpleText", "") if isinstance(dur, dict) else str(dur)
+        secs = convert_timestamp_to_seconds(dur_text)
+        if 0 < secs <= 90:
+            return True
+
+    # video_id が存在して、他の条件がなくても一応対象（オリジナルのままにしつつ寛容に）
+    video_id = item.get("id") or item.get("videoId") or item.get("video_id")
+    if video_id:
+        # ただしタイプが明らかに異なる場合は除外
+        item_type = item.get("type", "").lower()
+        if "channel" not in item_type and "playlist" not in item_type:
+            return True
+
+    return False
 
 
 def transform_mirror_item(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """ミラーノードのレスポンスアイテムを標準フォーマットに変換"""
+    if not isinstance(item, dict):
+        return None
+
     item_type = item.get("type", "")
 
-    on_tap = item.get("on_tap_endpoint") or {}
-    on_tap_payload = (on_tap.get("payload") or {}) if isinstance(on_tap, dict) else {}
-    shorts_video_id = on_tap_payload.get("videoId") if isinstance(on_tap_payload, dict) else None
+    # === ShortsLockupView の処理 ===
+    if item_type == "ShortsLockupView":
+        on_tap = item.get("on_tap_endpoint") or {}
+        on_tap_payload = (on_tap.get("payload") or {}) if isinstance(on_tap, dict) else {}
+        shorts_video_id = on_tap_payload.get("videoId") if isinstance(on_tap_payload, dict) else None
 
-    if item_type == "ShortsLockupView" or shorts_video_id:
         if not shorts_video_id:
             return None
 
@@ -244,20 +273,75 @@ def transform_mirror_item(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         raw_views = sec_text.get("text", "") if isinstance(sec_text, dict) else ""
         view_count = extract_view_number(raw_views)
 
+        # サムネイル取得
+        thumb_url = None
+        thumbnail = item.get("thumbnail") or {}
+        if isinstance(thumbnail, dict):
+            sources = thumbnail.get("sources") or []
+            if sources and isinstance(sources, list):
+                thumb_url = sources[0].get("url") if isinstance(sources[0], dict) else None
+
+        if not thumb_url:
+            thumb_url = f"https://i.ytimg.com/vi/{shorts_video_id}/mqdefault.jpg"
+
         return format_short_payload(
             video_id=shorts_video_id,
             title=title,
             length_seconds=60,
             view_count=view_count,
             view_count_text=raw_views,
+            thumbnail_url=thumb_url,
         )
 
+    # === on_tap_endpoint で videoId がある場合 ===
+    on_tap = item.get("on_tap_endpoint") or {}
+    on_tap_payload = (on_tap.get("payload") or {}) if isinstance(on_tap, dict) else {}
+    shorts_video_id = on_tap_payload.get("videoId") if isinstance(on_tap_payload, dict) else None
+
+    if shorts_video_id:
+        overlay = item.get("overlay_metadata") or {}
+        title = ""
+        if isinstance(overlay, dict):
+            primary = overlay.get("primary_text") or {}
+            title = primary.get("text", "") if isinstance(primary, dict) else ""
+
+        if not title:
+            acc = item.get("accessibility_text") or ""
+            title = acc.split(",")[0] if acc else shorts_video_id
+
+        sec_text = overlay.get("secondary_text") or {} if isinstance(overlay, dict) else {}
+        raw_views = sec_text.get("text", "") if isinstance(sec_text, dict) else ""
+        view_count = extract_view_number(raw_views)
+
+        # サムネイル取得
+        thumb_url = None
+        thumbnail = item.get("thumbnail") or {}
+        if isinstance(thumbnail, dict):
+            sources = thumbnail.get("sources") or []
+            if sources and isinstance(sources, list):
+                thumb_url = sources[0].get("url") if isinstance(sources[0], dict) else None
+
+        if not thumb_url:
+            thumb_url = f"https://i.ytimg.com/vi/{shorts_video_id}/mqdefault.jpg"
+
+        return format_short_payload(
+            video_id=shorts_video_id,
+            title=title,
+            length_seconds=60,
+            view_count=view_count,
+            view_count_text=raw_views,
+            thumbnail_url=thumb_url,
+        )
+
+    # === 通常の動画アイテムの処理 ===
     video_id = item.get("id") or item.get("videoId") or item.get("video_id")
     if not video_id:
         return None
 
     title_field = item.get("title") or {}
     title = title_field.get("text") or title_field.get("simpleText") or str(title_field) if title_field else ""
+    if not title:
+        title = video_id
 
     author_field = item.get("author") or item.get("channel") or {}
     author_name, author_id = "", ""
@@ -266,29 +350,53 @@ def transform_mirror_item(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         author_id = author_field.get("id", "")
 
     vc_field = item.get("view_count") or item.get("short_view_count") or {}
-    vc_text = vc_field.get("text", "") if isinstance(vc_field, dict) else ""
+    vc_text = vc_field.get("text", "") if isinstance(vc_field, dict) else str(vc_field) if vc_field else ""
     view_count = extract_view_number(vc_text)
 
     pub_field = item.get("published") or {}
-    pub_text = pub_field.get("text", "") if isinstance(pub_field, dict) else ""
+    pub_text = pub_field.get("text", "") if isinstance(pub_field, dict) else str(pub_field) if pub_field else ""
+
+    # サムネイル取得
+    thumb_url = None
+    thumbnails = item.get("thumbnails") or []
+    if thumbnails and isinstance(thumbnails, list):
+        first_thumb = thumbnails[0] if isinstance(thumbnails[0], dict) else {}
+        thumb_url = first_thumb.get("url")
+
+    if not thumb_url:
+        thumb_url = f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"
+
+    # 動画の長さを取得
+    dur = item.get("duration") or {}
+    dur_secs = 30
+    if isinstance(dur, dict):
+        dur_text = dur.get("text") or dur.get("simpleText", "")
+        dur_secs = convert_timestamp_to_seconds(dur_text) or 30
+    elif isinstance(dur, (int, float)):
+        dur_secs = int(dur)
+    elif dur:
+        dur_secs = convert_timestamp_to_seconds(str(dur)) or 30
 
     return format_short_payload(
         video_id=video_id,
         title=title,
         author=author_name,
         author_id=author_id,
-        length_seconds=30,
+        length_seconds=dur_secs,
         view_count=view_count,
         view_count_text=vc_text,
+        thumbnail_url=thumb_url,
         published_text=pub_text,
     )
 
 
 @router.get("/v1/shorts/stream")
 async def stream_shorts_feed(q: str = Query(...)):
+    """Shortsストリーミング検索エンドポイント - 複数のミラーノードから並行取得"""
     query_variants = [q, f"{q} ショート", f"{q} #shorts"]
 
     async def execute_node_request(client: httpx.AsyncClient, base: str, search_q: str, page: int) -> List[Dict[str, Any]]:
+        """単一のミラーノードへのリクエスト実行"""
         try:
             resp = await client.get(
                 f"{base}/api/search",
@@ -301,16 +409,22 @@ async def stream_shorts_feed(q: str = Query(...)):
                 return []
 
             candidates = list(data.get("shorts") or [])
+            
+            # videos から Shorts 対象のものをフィルタリング
             for v in (data.get("videos") or []):
                 if check_short_eligibility(v):
                     candidates.append(v)
+            
             return candidates
         except Exception:
             return []
 
     async def generate_event_stream():
+        """イベントストリーム生成"""
         seen: set[str] = set()
+        
         async with httpx.AsyncClient() as client:
+            # 全ミラーノード・クエリバリアント・ページを並行実行
             coros = [
                 execute_node_request(client, base, search_q, page)
                 for base in MIRROR_NODES
@@ -322,15 +436,18 @@ async def stream_shorts_feed(q: str = Query(...)):
             for fut in asyncio.as_completed(tasks):
                 batch = await fut
                 new_items = []
+                
                 for raw in batch:
                     normalized = transform_mirror_item(raw)
-                    if normalized and normalized["videoId"] not in seen:
+                    if normalized and normalized.get("videoId") not in seen:
                         seen.add(normalized["videoId"])
                         new_items.append(normalized)
 
+                # バッチごとにイベント送信
                 if new_items:
                     yield f"data: {json.dumps({'items': new_items}, ensure_ascii=False)}\n\n"
 
+        # 完了イベント送信
         yield 'data: {"done":true}\n\n'
 
     return StreamingResponse(
