@@ -289,6 +289,11 @@ async def setting_page(request: Request):
 async def gameview_page(request: Request):
     return templates.TemplateResponse("gameview.html", {"request": request})
 
+@app.get("/other", response_class=HTMLResponse)
+async def other_page(request: Request):
+    return templates.TemplateResponse("other.html", {"request": request})
+
+
 
 
 if __name__ == "__main__":
