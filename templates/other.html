@@ -243,13 +243,13 @@
             </div>
         </a>
 
-        <div class="menu-card" id="btn-about-plus">
+        <a href="/about" class="menu-card" id="btn-about-plus">
             <span class="material-symbols-outlined">stars</span>
             <div class="card-content">
                 <h2>仙人tube plusについて</h2>
                 <p>クリックして詳細と機能概要を表示します。</p>
             </div>
-        </div>
+        </a>
     </div>
 
     <!-- 仙人tube plusについて（クリック時に展開されるエリア） -->
@@ -279,7 +279,7 @@
             </li>
             <li>
                 <span class="info-label">バージョン</span>
-                <span class="info-value">v1.0.0</span>
+                <span class="info-value">v2.0</span>
             </li>
             <li>
                 <span class="info-label">ステータス</span>
@@ -293,17 +293,6 @@
 {% block extra_js %}
 <script>
     $(document).ready(function() {
-        $("#btn-about-plus").click(function(e) {
-            e.preventDefault();
-            $("#about-plus-details").slideToggle(200, function() {
-                if ($(this).is(":visible")) {
-                    $('html, body').animate({
-                        scrollTop: $("#about-plus-details").offset().top - 80
-                    }, 300);
-                }
-            });
-        });
-
         $("#btn-close-details").click(function() {
             $("#about-plus-details").slideUp(200);
         });
