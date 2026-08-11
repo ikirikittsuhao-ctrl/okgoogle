@@ -15,6 +15,9 @@ from app.channel import router as channel_router
 
 app = FastAPI()
 
+# --- 画像等の静的ファイル配信ルートの追加 ---
+app.mount("/img", StaticFiles(directory="img"), name="img")
+
 templates = Jinja2Templates(directory="templates")
 templates.env.add_extension("jinja2.ext.do")
 
