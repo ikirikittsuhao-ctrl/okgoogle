@@ -276,7 +276,7 @@ async def bbs_page(request: Request):
     return templates.TemplateResponse("bbs.html", {"request": request})
 
 
-@app.get("/ytdl", response_class=HTMLResponse)
+@app.get("/downloader", response_class=HTMLResponse)
 async def ytdl_page(request: Request):
     return templates.TemplateResponse("bbs.html", {"request": request})
 
@@ -292,6 +292,11 @@ async def gameview_page(request: Request):
 @app.get("/other", response_class=HTMLResponse)
 async def other_page(request: Request):
     return templates.TemplateResponse("other.html", {"request": request})
+
+@app.get("/editor", response_class=HTMLResponse)
+async def other_page(request: Request):
+    return templates.TemplateResponse("editor.html", {"request": request})
+
 
 
 
