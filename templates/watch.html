@@ -1186,10 +1186,13 @@
   
         history = history.filter(item => item && item.videoId !== videoId);  
   
+        const titleText = {% if video_title %}{{ video_title|tojson }}{% else %}document.getElementById('video-title')?.innerText?.trim() || ''{% endif %};
+        const authorText = {% if author %}{{ author|tojson }}{% else %}document.querySelector('.yt-channel-name')?.innerText?.trim() || ''{% endif %};
+
         history.unshift({  
             videoId: videoId,  
-            title: {{ video_title|tojson }},  
-            author: {{ author|tojson }},  
+            title: titleText || '無題の動画',  
+            author: authorText || '',  
             added_at: new Date().toLocaleString('ja-JP')  
         });  
   
