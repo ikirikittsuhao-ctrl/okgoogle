@@ -285,7 +285,7 @@ async def setting_page(request: Request):
 
 @app.get("/gameview", response_class=HTMLResponse)
 async def gameview_page(request: Request):
-    return templates.TemplateResponse("Gameview.html", {"request": request})
+    return templates.TemplateResponse("gameview.html", {"request": request})
 
 
 
