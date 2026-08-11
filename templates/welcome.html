@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>仙人tube plus - Welcome Experience</title>
   
   <!-- 手書き風フォント（Caveat）の読み込み -->
@@ -72,7 +72,8 @@
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       background-color: var(--bg-base);
       color: var(--text-main);
-      min-height: 100vh;
+      height: 100vh;
+      height: 100dvh;
       width: 100vw;
       overflow: hidden;
       position: relative;
@@ -187,20 +188,22 @@
     }
 
     /* ==========================================================
-       4. 全画面プレゼンテーション
+       4. 全画面プレゼンテーション（レスポンシブ・レイアウト強化）
        ========================================================== */
     .fullscreen-wrapper {
       position: relative;
       z-index: 1;
       width: 100vw;
       height: 100vh;
+      height: 100dvh;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      padding: 40px 60px;
+      padding: clamp(20px, 4vh, 40px) clamp(20px, 5vw, 60px);
       opacity: 0;
       transform: scale(0.98);
       transition: opacity 1s cubic-bezier(0.16, 1, 0.3, 1), transform 1s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
     }
 
     .fullscreen-wrapper.show {
@@ -216,6 +219,8 @@
       font-size: 1.1rem;
       font-weight: 700;
       letter-spacing: -0.01em;
+      flex-shrink: 0;
+      height: 40px;
     }
 
     .top-header svg {
@@ -230,6 +235,8 @@
       align-items: center;
       width: 100%;
       overflow: hidden;
+      min-height: 0;
+      margin: 10px 0;
     }
 
     .slider-track {
@@ -247,39 +254,37 @@
       justify-content: center;
       align-items: center;
       text-align: center;
-      padding: 0 20px;
+      padding: 10px 20px;
       opacity: 0.15;
       transform: scale(0.92) translateY(10px);
       transition: opacity 0.7s ease, transform 0.7s ease;
       pointer-events: none;
-      overflow-y: auto; /* 長いコンテンツにも対応 */
+      overflow-y: auto;
       
-      /* スクロールバーのカスタマイズ（WebKit） */
       scrollbar-width: thin;
       scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
     }
 
     .slide::-webkit-scrollbar {
-      width: 8px;
+      width: 6px;
     }
 
     .slide::-webkit-scrollbar-track {
       background: var(--scrollbar-track);
       border-radius: 10px;
-      margin: 10px 0;
     }
 
     .slide::-webkit-scrollbar-thumb {
       background: var(--scrollbar-thumb);
       border-radius: 10px;
-      border: 2px solid transparent;
+      border: 1.5px solid transparent;
       background-clip: content-box;
       transition: background 0.2s ease;
     }
 
     .slide::-webkit-scrollbar-thumb:hover {
       background: var(--scrollbar-thumb-hover);
-      border: 2px solid transparent;
+      border: 1.5px solid transparent;
       background-clip: content-box;
     }
 
@@ -290,9 +295,9 @@
     }
 
     .slide-icon-badge {
-      width: 88px;
-      height: 88px;
-      border-radius: 28px;
+      width: clamp(64px, 10vh, 88px);
+      height: clamp(64px, 10vh, 88px);
+      border-radius: 24px;
       background: var(--glass-panel);
       backdrop-filter: blur(24px);
       -webkit-backdrop-filter: blur(24px);
@@ -301,20 +306,20 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-bottom: 24px;
+      margin-bottom: clamp(14px, 2.5vh, 24px);
       flex-shrink: 0;
     }
 
     .slide-icon-badge svg {
-      width: 44px;
-      height: 44px;
+      width: clamp(32px, 5vh, 44px);
+      height: clamp(32px, 5vh, 44px);
     }
 
     .slide-title {
-      font-size: 2.4rem;
+      font-size: clamp(1.6rem, 4vw, 2.4rem);
       font-weight: 700;
       letter-spacing: -0.02em;
-      margin-bottom: 16px;
+      margin-bottom: clamp(10px, 2vh, 16px);
       line-height: 1.25;
       max-width: 720px;
       color: var(--text-main);
@@ -322,9 +327,9 @@
     }
 
     .slide-desc {
-      font-size: 1.1rem;
+      font-size: clamp(0.95rem, 2vw, 1.1rem);
       color: var(--text-sub);
-      line-height: 1.7;
+      line-height: 1.6;
       max-width: 600px;
       font-weight: 500;
     }
@@ -334,7 +339,7 @@
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      margin-top: 20px;
+      margin-top: clamp(14px, 2.5vh, 20px);
       padding: 12px 24px;
       background: var(--glass-panel);
       border: 1.5px solid var(--glass-border);
@@ -344,6 +349,7 @@
       text-decoration: none;
       box-shadow: var(--glass-shadow);
       transition: all 0.25s ease;
+      flex-shrink: 0;
     }
 
     .link-btn:hover {
@@ -352,10 +358,12 @@
       color: var(--btn-primary-text);
     }
 
-    /* スライドとは別UIの「開発者 & デプロイ者」パネル */
+    /* ==========================================================
+       4-B. 高級感のある「開発者 & デプロイ者」パネル（デザイン刷新）
+       ========================================================== */
     .credits-container {
       width: 100%;
-      max-width: 800px;
+      max-width: 760px;
       display: flex;
       flex-direction: column;
       gap: 20px;
@@ -365,37 +373,77 @@
     }
 
     .credit-card {
+      position: relative;
       background: var(--glass-panel);
-      backdrop-filter: blur(24px);
-      -webkit-backdrop-filter: blur(24px);
-      border: 1.5px solid var(--glass-border);
-      box-shadow: var(--glass-shadow);
-      border-radius: 20px;
-      padding: 28px;
-      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      backdrop-filter: blur(30px);
+      -webkit-backdrop-filter: blur(30px);
+      border: 1px solid var(--glass-border);
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.08);
+      border-radius: 24px;
+      padding: clamp(20px, 3vh, 28px);
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+
+    /* グラデーション線の流れるアニメーション設定 */
+    .credit-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--g-blue), var(--g-red), var(--g-yellow), var(--g-green), var(--g-blue));
+      background-size: 300% 100%;
+      opacity: 0.85;
+      animation: gradientFlow 4s linear infinite;
+    }
+
+    @keyframes gradientFlow {
+      0% { background-position: 0% 0%; }
+      100% { background-position: 100% 0%; }
     }
 
     .credit-card:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.15);
+      transform: translateY(-3px);
+      box-shadow: 0 24px 50px rgba(0, 0, 0, 0.14);
+      border-color: rgba(255, 255, 255, 0.4);
     }
 
     .credit-title {
-      font-size: 1.25rem;
-      font-weight: 700;
+      font-size: clamp(1.1rem, 2.5vw, 1.3rem);
+      font-weight: 800;
       margin-bottom: 16px;
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
       color: var(--text-main);
-      border-bottom: 1px solid rgba(128, 128, 128, 0.15);
-      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(128, 128, 128, 0.12);
+      padding-bottom: 14px;
+      letter-spacing: -0.01em;
+    }
+
+    .credit-title-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 12px;
+      background: rgba(66, 133, 244, 0.1);
+      color: var(--g-blue);
+      flex-shrink: 0;
+    }
+
+    .credit-title-icon.deployer-icon {
+      background: rgba(52, 168, 83, 0.1);
+      color: var(--g-green);
     }
 
     .credit-links-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
       margin-top: 14px;
     }
 
@@ -403,36 +451,69 @@
       display: flex;
       align-items: center;
       gap: 12px;
-      padding: 12px 16px;
-      background: rgba(128, 128, 128, 0.08);
-      border-radius: 14px;
+      padding: 12px 18px;
+      background: rgba(128, 128, 128, 0.05);
+      border-radius: 16px;
       color: var(--text-main);
       text-decoration: none;
       font-size: 0.95rem;
       font-weight: 600;
-      border: 1px solid transparent;
+      border: 1px solid rgba(128, 128, 128, 0.1);
       transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
       word-break: break-all;
     }
 
     .credit-link-item:hover {
       border-color: var(--btn-primary-bg);
-      background: rgba(128, 128, 128, 0.16);
+      background: rgba(26, 115, 232, 0.08);
+      color: var(--btn-primary-bg);
       transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.06);
+    }
+
+    .credit-link-item svg {
+      flex-shrink: 0;
+      transition: transform 0.25s ease;
+    }
+
+    .credit-link-item:hover svg {
+      transform: scale(1.1);
+    }
+
+    .classroom-box {
+      margin-top: 18px;
+      padding: 12px 18px;
+      background: rgba(128, 128, 128, 0.04);
+      border-radius: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      border: 1px dashed rgba(128, 128, 128, 0.2);
+    }
+
+    .classroom-label {
+      font-size: 0.88rem;
+      color: var(--text-sub);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
     .credit-badge-code {
       display: inline-block;
-      padding: 6px 14px;
-      background: rgba(128, 128, 128, 0.12);
-      border: 1px solid rgba(128, 128, 128, 0.2);
-      border-radius: 8px;
+      padding: 6px 16px;
+      background: var(--bg-base);
+      border: 1px solid rgba(128, 128, 128, 0.25);
+      border-radius: 10px;
       font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
       font-size: 0.95rem;
       font-weight: 700;
       color: var(--btn-primary-bg);
-      letter-spacing: 0.05em;
+      letter-spacing: 0.08em;
+      box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
     }
 
     .deployers-empty {
@@ -441,24 +522,33 @@
       color: var(--text-sub);
       font-size: 0.95rem;
       font-weight: 500;
-      background: rgba(128, 128, 128, 0.05);
-      border-radius: 14px;
-      border: 1.5px dashed rgba(128, 128, 128, 0.25);
+      background: rgba(128, 128, 128, 0.03);
+      border-radius: 16px;
+      border: 1.5px dashed rgba(128, 128, 128, 0.2);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
     }
 
     /* ==========================================================
-       5. 下部コントロールバー
+       5. 下部コントロールバー（常時固定表示）
        ========================================================== */
     .bottom-bar {
       display: flex;
       align-items: center;
       justify-content: space-between;
       width: 100%;
+      flex-shrink: 0;
+      height: 50px;
+      margin-top: 5px;
+      z-index: 10;
     }
 
     .indicators {
       display: flex;
       gap: 10px;
+      align-items: center;
     }
 
     .dot {
@@ -526,14 +616,12 @@
 
     /* レスポンシブ対応 */
     @media (max-width: 768px) {
-      .fullscreen-wrapper { padding: 30px 20px; }
-      .glass-welcome { font-size: 5rem; }
-      .slide-title { font-size: 1.8rem; }
-      .slide-desc { font-size: 1rem; }
-      .slide-icon-badge { width: 72px; height: 72px; margin-bottom: 18px; }
-      .slide-icon-badge svg { width: 36px; height: 36px; }
+      .fullscreen-wrapper { padding: 20px 16px; }
+      .glass-welcome { font-size: 4.5rem; }
       .credit-links-grid { grid-template-columns: 1fr; }
-      .credit-card { padding: 20px; }
+      .credit-card { padding: 18px; }
+      .btn { padding: 10px 20px; font-size: 0.9rem; }
+      .bottom-bar { height: 44px; }
     }
 
     /* ==========================================================
@@ -698,15 +786,17 @@
           </a>
         </section>
 
-        <!-- Slide 5 (紹介の後に配置した別UIの開発者・デプロイ者表示パネル) -->
+        <!-- Slide 5 -->
         <section class="slide">
           <div class="credits-container">
             
             <!-- 開発者情報 -->
             <div class="credit-card">
               <div class="credit-title">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--g-blue)" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                開発者：仙人@sugar
+                <div class="credit-title-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </div>
+                <span>開発者：仙人@sugar</span>
               </div>
               <div class="credit-links-grid">
                 <a href="https://github.com/senninsugar" target="_blank" rel="noopener noreferrer" class="credit-link-item">
@@ -714,7 +804,11 @@
                   GitHub
                 </a>
                 <a href="https://padlet.com/sennin_sugar" target="_blank" rel="noopener noreferrer" class="credit-link-item">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--g-yellow)" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                  <svg width="18" height="18" viewBox="0 0 250 250" fill="currentColor">
+                    <g transform="translate(0,250) scale(0.1,-0.1)">
+                      <path d="M1215 2089 c-17 -5 -42 -21 -56 -36 -14 -16 -84 -164 -155 -330 -71 -167 -132 -303 -135 -303 -3 0 -108 56 -233 125 -126 69 -241 128 -256 132 -54 10 -110 -42 -110 -104 0 -16 117 -231 301 -552 166 -289 311 -538 321 -554 44 -63 101 -71 254 -37 l100 22 117 -25 c125 -27 164 -25 210 9 14 11 67 91 118 179 67 116 346 566 374 603 1 1 40 -16 86 -38 45 -22 95 -40 110 -40 38 0 77 35 85 75 5 29 -4 52 -66 167 -40 73 -80 139 -88 146 -11 8 -57 12 -148 12 l-132 0 -140 -60 c-78 -33 -143 -60 -145 -60 -3 0 -64 138 -137 308 -73 169 -140 315 -149 325 -30 36 -79 49 -126 36z m67 -71 c19 -14 418 -936 418 -964 0 -18 -125 -488 -140 -530 -5 -13 -23 -30 -40 -39 -30 -15 -38 -15 -152 11 l-120 28 6 40 c3 23 11 113 17 201 l12 160 204 60 c113 33 201 61 196 62 -5 2 -97 -10 -206 -25 l-197 -29 0 36 c0 84 -30 955 -33 958 -2 1 -10 -217 -18 -486 -8 -269 -17 -493 -21 -497 -6 -5 -405 43 -415 51 -8 5 409 951 423 962 22 16 46 17 66 1z m-678 -535 c127 -69 232 -127 233 -128 2 -1 -24 -64 -57 -140 -33 -76 -60 -148 -60 -159 0 -12 13 -70 30 -130 16 -61 28 -111 26 -113 -6 -6 -436 752 -436 769 0 14 10 23 29 27 2 1 108 -56 235 -126z m1629 -154 c26 -47 47 -93 47 -103 0 -24 -32 -20 -107 16 -38 18 -69 33 -70 33 -1 1 9 45 24 98 l26 97 17 -27 c9 -16 37 -67 63 -114z"/>
+                    </g>
+                  </svg>
                   Padlet
                 </a>
                 <a href="https://scratch.mit.edu/users/senninch" target="_blank" rel="noopener noreferrer" class="credit-link-item">
@@ -722,8 +816,11 @@
                   Scratch
                 </a>
               </div>
-              <div style="margin-top: 18px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-                <span style="font-size: 0.9rem; color: var(--text-sub); font-weight: 600;">Classroom Code:</span>
+              <div class="classroom-box">
+                <span class="classroom-label">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                  Classroom Code
+                </span>
                 <span class="credit-badge-code">kf6hp4j6</span>
               </div>
             </div>
@@ -731,11 +828,13 @@
             <!-- デプロイしてくださった方々 -->
             <div class="credit-card">
               <div class="credit-title">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--g-green)" stroke-width="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-                デプロイしてくださった方々
+                <div class="credit-title-icon deployer-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                </div>
+                <span>デプロイしてくださった方々</span>
               </div>
               <div class="deployers-empty">
-                まだいません
+                <span>まだいません</span>
               </div>
             </div>
 
