@@ -455,7 +455,7 @@
     </div>
 
     {% if type == 'short' %}
-    <div id="shorts-type-section" style="display: none;">
+    <div id="shorts-type-section">
         <div class="section-header">
             <span class="material-symbols-outlined">bolt</span>
             <span>Shorts</span>
@@ -515,7 +515,7 @@
     </div>
 
     {% else %}
-    <!-- ホーム・全体検索表示（Shortsセクションを先頭に動的配置可能） -->
+    <!-- ホーム・全体検索表示（Shortsセクションを先頭に動的配置） -->
     <div id="shorts-stream-section" style="display: none;">
         <div class="section-header">
             <span class="material-symbols-outlined">bolt</span>
@@ -626,12 +626,23 @@
                 </div>
                 <div class="video-info">
                     <div class="video-details">
-                        <div class="video-title">${item.title}</div>
-                        <div class="video-meta">${views}</div>
+                        <div class="video-title">${escapeHtml(item.title)}</div>
+                        <div class="video-meta">${escapeHtml(views)}</div>
                     </div>
                 </div>
             </a>
         `;
+    }
+
+    function escapeHtml(text) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.replace(/[&<>"']/g, m => map[m]);
     }
 
     function startShortsStream(query) {
@@ -643,6 +654,8 @@
 
         const eventSource = new EventSource(`/v1/shorts/stream?q=${encodeURIComponent(query)}`);
 
+        let shortStreamStarted = false;
+
         eventSource.onmessage = function (event) {
             try {
                 const data = JSON.parse(event.data);
@@ -652,13 +665,14 @@
 
                     if (currentType === 'short') {
                         $('#shorts-type-section').show();
-                    } else {
+                    } else if (shortStreamStarted) {
                         $('#shorts-stream-section').show();
                     }
                     return;
                 }
 
                 if (data.items && data.items.length > 0) {
+                    shortStreamStarted = true;
                     data.items.forEach(item => {
                         const html = createShortCardHtml(item);
                         targetContainer.append(html);
@@ -672,6 +686,9 @@
         eventSource.onerror = function () {
             eventSource.close();
             $("#infinite-loader").hide();
+            if (!shortStreamStarted) {
+                console.warn("Shorts stream failed to load or returned no data");
+            }
         };
     }
 
