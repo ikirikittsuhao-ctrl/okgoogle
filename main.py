@@ -12,6 +12,7 @@ from app.search import router as search_router
 from app.video import router as video_router
 from app.stream import router as stream_router
 from app.channel import router as channel_router
+from app.short import router as short_router
 
 app = FastAPI()
 
@@ -25,6 +26,7 @@ app.include_router(search_router)
 app.include_router(video_router)
 app.include_router(stream_router)
 app.include_router(channel_router)
+app.include_router(short_router)
 
 
 # --- 404 カスタムエラーハンドラー ---
