@@ -297,7 +297,9 @@ async def other_page(request: Request):
 async def other_page(request: Request):
     return templates.TemplateResponse("editor.html", {"request": request})
 
-
+@app.get("/other-sites", response_class=HTMLResponse)
+async def other_page(request: Request):
+    return templates.TemplateResponse("other-sites.html", {"request": request})
 
 
 
