@@ -301,6 +301,9 @@ async def other_page(request: Request):
 async def other_page(request: Request):
     return templates.TemplateResponse("other-sites.html", {"request": request})
 
+@app.get("/about", response_class=HTMLResponse)
+async def other_page(request: Request):
+    return templates.TemplateResponse("about.html", {"request": request})
 
 
 if __name__ == "__main__":
