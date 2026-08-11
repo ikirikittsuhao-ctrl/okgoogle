@@ -283,6 +283,11 @@ async def ytdl_page(request: Request):
 async def setting_page(request: Request):
     return templates.TemplateResponse("setting.html", {"request": request})
 
+@app.get("/gameview", response_class=HTMLResponse)
+async def gameview_page(request: Request):
+    return templates.TemplateResponse("Gameview.html", {"request": request})
+
+
 
 if __name__ == "__main__":
     import uvicorn
