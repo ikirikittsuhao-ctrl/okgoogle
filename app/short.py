@@ -4,7 +4,10 @@ from bs4 import BeautifulSoup
 from urllib.parse import quote, urlparse, parse_qs, unquote
 import time
 
-router = APIRouter(prefix="/api/short", tags=["short"])
+router = APIRouter(
+    prefix="/api/short",
+    tags=["short"]
+)
 
 HEADERS = {
     "User-Agent": (
@@ -22,7 +25,10 @@ HEADERS = {
 }
 
 MAX_RETRIES = 3
-REQUEST_TIMEOUT = 20
+REQUEST_TIMEOUT = 10
+
+session = requests.Session()
+session.headers.update(HEADERS)
 
 
 def normalize_hostname(hostname):
@@ -38,21 +44,17 @@ def normalize_hostname(hostname):
 
 
 def is_youtube_hostname(hostname):
-    hostname = normalize_hostname(hostname)
-
-    return hostname in [
+    return normalize_hostname(hostname) in {
         "youtube.com",
         "m.youtube.com"
-    ]
+    }
 
 
 def is_duckduckgo_hostname(hostname):
-    hostname = normalize_hostname(hostname)
-
-    return hostname in [
+    return normalize_hostname(hostname) in {
         "duckduckgo.com",
         "html.duckduckgo.com"
-    ]
+    }
 
 
 def clean_url(url):
@@ -62,12 +64,12 @@ def clean_url(url):
     url = url.strip()
 
     for _ in range(3):
-        decoded_url = unquote(url)
+        decoded = unquote(url)
 
-        if decoded_url == url:
+        if decoded == url:
             break
 
-        url = decoded_url
+        url = decoded
 
     return url
 
@@ -77,38 +79,30 @@ def extract_youtube_url(url):
         return None
 
     try:
-        current_url = clean_url(url)
+        current = clean_url(url)
 
         for _ in range(5):
-            parsed = urlparse(current_url)
+            parsed = urlparse(current)
 
             if is_youtube_hostname(parsed.hostname):
-                return current_url
+                return current
 
             if not is_duckduckgo_hostname(parsed.hostname):
                 return None
 
-            query = parse_qs(parsed.query)
+            params = parse_qs(parsed.query)
 
-            if "uddg" not in query:
+            urls = params.get("uddg")
+
+            if not urls:
                 return None
 
-            next_url = None
-
-            for encoded_url in query["uddg"]:
-                decoded_url = clean_url(encoded_url)
-
-                decoded_parsed = urlparse(decoded_url)
-
-                if is_youtube_hostname(decoded_parsed.hostname):
-                    return decoded_url
-
-                next_url = decoded_url
+            next_url = clean_url(urls[0])
 
             if not next_url:
                 return None
 
-            current_url = next_url
+            current = next_url
 
         return None
 
@@ -126,38 +120,24 @@ def extract_video_id(url):
         if not is_youtube_hostname(parsed.hostname):
             return None
 
-        path = parsed.path or ""
+        path = parsed.path.rstrip("/")
 
         if path.startswith("/shorts/"):
-            video_id = path.split("/shorts/", 1)[1]
+            video_id = path[len("/shorts/"):]
 
-            video_id = video_id.split("/", 1)[0]
-            video_id = video_id.split("?", 1)[0]
-            video_id = video_id.strip()
+        elif path == "/watch":
+            video_id = parse_qs(parsed.query).get("v", [None])[0]
 
-            if video_id:
-                return video_id
+        elif path.startswith("/embed/"):
+            video_id = path[len("/embed/"):]
 
-        if path == "/watch":
-            params = parse_qs(parsed.query)
+        else:
+            return None
 
-            if "v" in params:
-                video_id = params["v"][0]
+        if not video_id:
+            return None
 
-                if video_id:
-                    return video_id
-
-        if path.startswith("/embed/"):
-            video_id = path.split("/embed/", 1)[1]
-
-            video_id = video_id.split("/", 1)[0]
-            video_id = video_id.split("?", 1)[0]
-            video_id = video_id.strip()
-
-            if video_id:
-                return video_id
-
-        return None
+        return video_id.split("/")[0].strip() or None
 
     except Exception:
         return None
@@ -170,10 +150,10 @@ def is_explicit_shorts_url(url):
     try:
         parsed = urlparse(url)
 
-        if not is_youtube_hostname(parsed.hostname):
-            return False
-
-        return parsed.path.startswith("/shorts/")
+        return (
+            is_youtube_hostname(parsed.hostname)
+            and parsed.path.startswith("/shorts/")
+        )
 
     except Exception:
         return False
@@ -187,124 +167,57 @@ def build_thumbnail_url(video_id):
     return f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
 
 
-def get_result_title(result):
-    selectors = [
-        ".result__title a",
-        ".result__a",
-        "a.result__a",
-        "h2 a",
-        "h3 a"
-    ]
+def get_result_data(result):
+    title = ""
+    url = ""
+    snippet = ""
 
-    for selector in selectors:
-        element = result.select_one(selector)
-
-        if element:
+    for element in result.select(
+        ".result__title a, .result__a, a.result__a, h2 a, h3 a"
+    ):
+        if not title:
             title = element.get_text(" ", strip=True)
 
-            if title:
-                return title
-
-    return ""
-
-
-def get_result_url(result):
-    selectors = [
-        ".result__title a",
-        ".result__a",
-        "a.result__a",
-        "h2 a",
-        "h3 a"
-    ]
-
-    for selector in selectors:
-        element = result.select_one(selector)
-
-        if element:
+        if not url:
             url = element.get("href", "")
 
-            if url:
-                return url
+        if title and url:
+            break
 
-    return ""
+    element = result.select_one(
+        ".result__snippet, .result__body, .result__description"
+    )
 
+    if element:
+        snippet = element.get_text(" ", strip=True)
 
-def get_result_snippet(result):
-    selectors = [
-        ".result__snippet",
-        ".result__body",
-        ".result__description"
-    ]
-
-    for selector in selectors:
-        element = result.select_one(selector)
-
-        if element:
-            snippet = element.get_text(" ", strip=True)
-
-            if snippet:
-                return snippet
-
-    return ""
+    return title, url, snippet
 
 
 def extract_result_elements(soup):
-    selectors = [
-        ".result",
-        ".results .result",
-        "article.result"
-    ]
-
-    elements = []
-
-    for selector in selectors:
-        found = soup.select(selector)
-
-        if found:
-            elements.extend(found)
-
-    unique_elements = []
-    seen_elements = set()
-
-    for element in elements:
-        element_id = id(element)
-
-        if element_id in seen_elements:
-            continue
-
-        seen_elements.add(element_id)
-        unique_elements.append(element)
-
-    return unique_elements
+    return soup.select(
+        ".result, .results .result, article.result"
+    )
 
 
 def request_duckduckgo(url, method="GET", data=None):
-    last_response = None
     last_error = None
+    last_response = None
 
     for attempt in range(MAX_RETRIES):
         try:
-            if method.upper() == "POST":
-                response = requests.post(
-                    url,
-                    headers=HEADERS,
-                    data=data,
-                    timeout=REQUEST_TIMEOUT,
-                    allow_redirects=True
-                )
-            else:
-                response = requests.get(
-                    url,
-                    headers=HEADERS,
-                    timeout=REQUEST_TIMEOUT,
-                    allow_redirects=True
-                )
+            response = session.request(
+                method,
+                url,
+                data=data,
+                timeout=REQUEST_TIMEOUT,
+                allow_redirects=True
+            )
 
             last_response = response
 
-            if response.status_code in [200, 202]:
-                if response.text:
-                    return response
+            if response.status_code in (200, 202) and response.text:
+                return response
 
             last_error = f"HTTP {response.status_code}"
 
@@ -312,26 +225,22 @@ def request_duckduckgo(url, method="GET", data=None):
             last_error = str(e)
 
         if attempt < MAX_RETRIES - 1:
-            time.sleep(1.5 * (attempt + 1))
+            time.sleep(0.7 * (attempt + 1))
 
-    if last_response is not None:
-        if last_response.text:
-            return last_response
+    if last_response is not None and last_response.text:
+        return last_response
 
     raise RuntimeError(
-        "DuckDuckGoへのアクセスに失敗しました: "
-        f"{last_error}"
+        f"DuckDuckGoへのアクセスに失敗しました: {last_error}"
     )
 
 
-def search_duckduckgo(query, max_results=20):
+def get_duckduckgo_results(query):
     search_query = f"site:youtube.com/shorts {query}"
-
-    encoded_query = quote(search_query)
 
     url = (
         "https://html.duckduckgo.com/html/"
-        f"?q={encoded_query}"
+        f"?q={quote(search_query)}"
     )
 
     response = request_duckduckgo(url)
@@ -341,33 +250,35 @@ def search_duckduckgo(query, max_results=20):
         "html.parser"
     )
 
-    result_elements = extract_result_elements(soup)
+    results = extract_result_elements(soup)
 
-    if not result_elements:
-        time.sleep(1)
+    if results:
+        return search_query, results
 
-        post_url = "https://html.duckduckgo.com/html/"
+    time.sleep(0.5)
 
-        response = request_duckduckgo(
-            post_url,
-            method="POST",
-            data={"q": search_query}
-        )
+    response = request_duckduckgo(
+        "https://html.duckduckgo.com/html/",
+        method="POST",
+        data={"q": search_query}
+    )
 
-        soup = BeautifulSoup(
-            response.text,
-            "html.parser"
-        )
+    soup = BeautifulSoup(
+        response.text,
+        "html.parser"
+    )
 
-        result_elements = extract_result_elements(soup)
+    return search_query, extract_result_elements(soup)
+
+
+def search_duckduckgo(query, max_results=20):
+    _, result_elements = get_duckduckgo_results(query)
 
     results = []
     used_video_ids = set()
 
     for result in result_elements:
-        title = get_result_title(result)
-        raw_url = get_result_url(result)
-        snippet = get_result_snippet(result)
+        title, raw_url, snippet = get_result_data(result)
 
         if not raw_url:
             continue
@@ -450,24 +361,6 @@ def api_search(
             "results": results
         }
 
-    except requests.exceptions.Timeout:
-        return {
-            "success": False,
-            "query": query,
-            "type": "youtube_shorts",
-            "count": 0,
-            "results": []
-        }
-
-    except requests.exceptions.RequestException:
-        return {
-            "success": False,
-            "query": query,
-            "type": "youtube_shorts",
-            "count": 0,
-            "results": []
-        }
-
     except Exception:
         return {
             "success": False,
@@ -491,49 +384,15 @@ def api_debug(
             "results": []
         }
 
-    search_query = f"site:youtube.com/shorts {query}"
-
-    encoded_query = quote(search_query)
-
-    url = (
-        "https://html.duckduckgo.com/html/"
-        f"?q={encoded_query}"
-    )
-
     try:
-        response = request_duckduckgo(url)
-
-        soup = BeautifulSoup(
-            response.text,
-            "html.parser"
+        search_query, result_elements = get_duckduckgo_results(
+            query
         )
-
-        result_elements = extract_result_elements(soup)
-
-        if not result_elements:
-            time.sleep(1)
-
-            post_url = "https://html.duckduckgo.com/html/"
-
-            response = request_duckduckgo(
-                post_url,
-                method="POST",
-                data={"q": search_query}
-            )
-
-            soup = BeautifulSoup(
-                response.text,
-                "html.parser"
-            )
-
-            result_elements = extract_result_elements(soup)
 
         results = []
 
         for result in result_elements:
-            title = get_result_title(result)
-            raw_url = get_result_url(result)
-            snippet = get_result_snippet(result)
+            title, raw_url, snippet = get_result_data(result)
 
             youtube_url = extract_youtube_url(raw_url)
             video_id = extract_video_id(youtube_url)
