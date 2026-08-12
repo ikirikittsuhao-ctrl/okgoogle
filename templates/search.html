@@ -694,9 +694,6 @@
     let isCseFetching = false;
     const seenVideoIds = new Set();
     const currentSearchQuery = "{{ query|default('') }}";
-    let csePage = 1;
-    let totalFetchedCount = 0;
-    const TARGET_FETCH_COUNT = 12;
 
     // Google カスタム検索エンジンの初期化設定
     window.__gcse = {
@@ -726,18 +723,7 @@
                             }
                         });
                     }
-                    if (videos.length > 0) {
-                        totalFetchedCount += videos.length;
-                        renderCseShortsResults(videos);
-                    }
-                    if (totalFetchedCount < TARGET_FETCH_COUNT && results && results.length > 0 && csePage < 5) {
-                        csePage++;
-                        const element = google.search.cse.element.getElement('shortsCse');
-                        if (element) {
-                            isCseFetching = true;
-                            element.execute(q, csePage);
-                        }
-                    }
+                    renderCseShortsResults(videos);
                     return true;
                 }
             }
@@ -754,7 +740,7 @@
         isCseFetching = true;
         const element = google.search.cse.element.getElement('shortsCse');
         if (element) {
-            element.execute(query + " site:youtube.com/shorts");
+            element.execute(query + " shorts site:youtube.com");
         } else {
             isCseFetching = false;
         }
