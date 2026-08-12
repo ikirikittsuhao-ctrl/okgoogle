@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}「{{ query }}」の検索結果 - 仙人Tube+{% endblock %}
+{% block title %}{% if query %}「{{ query }}」の検索結果 - 仙人Tube+{% else %}ホーム - 仙人Tube+{% endif %}{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -254,6 +254,26 @@
         margin-bottom: 32px;
     }
 
+    /* ホーム画面上部のShorts横スクロールセクション */
+    .home-shorts-section {
+        margin-bottom: 32px;
+        border-bottom: 1px solid var(--yt-border-color);
+        padding-bottom: 24px;
+    }
+
+    .home-shorts-container {
+        display: flex;
+        gap: 16px;
+        overflow-x: auto;
+        padding-bottom: 12px;
+        scrollbar-width: thin;
+    }
+
+    .home-shorts-container .video-card.is-short {
+        flex: 0 0 180px;
+        width: 180px;
+    }
+
     .video-card.is-short {
         display: flex;
         flex-direction: column;
@@ -404,6 +424,10 @@
         z-index: 3000;
     }
 
+    #hidden-cse-container {
+        display: none;
+    }
+
     /* モバイル・画面幅縮小時の調整 */
     @media (max-width: 600px) {
         .video-grid {
@@ -435,6 +459,8 @@
 {% endblock %}
 
 {% block content %}
+<div id="hidden-cse-container"></div>
+
 <div id="loading-overlay">
     <div class="yt-spinner"></div>
 </div>
@@ -468,6 +494,38 @@
             <a href="/search?q={{ query|default('') }}&type=playlist" class="filter-chip {% if type == 'playlist' %}active{% endif %}">プレイリスト</a>
         </div>
     </div>
+
+    {% if not query %}
+    <div class="home-shorts-section">
+        <div class="section-header">
+            <span class="material-symbols-outlined">bolt</span>
+            <span>Shorts</span>
+        </div>
+        <div class="home-shorts-container" id="home-shorts-container">
+            {% if shorts_results %}
+                {% for result in shorts_results %}
+                <a href="/shorts/{{ result['videoId'] }}" class="video-card is-short">
+                    <div class="thumbnail-box">
+                        <img class="thumbnail" loading="lazy" src="/proxy/thumb?v={{ result['videoId'] }}" onerror="this.src='{{ result['videoThumbnails'][0]['url'] if result['videoThumbnails'] else 'https://i.ytimg.com/vi/' + (result['videoId'] or '') + '/mqdefault.jpg' }}';">
+                        <div class="short-badge">
+                            <span class="material-symbols-outlined" style="font-size:14px;">bolt</span>
+                            SHORTS
+                        </div>
+                    </div>
+                    <div class="video-info">
+                        <div class="video-details">
+                            <div class="video-title">{{ result['title'] }}</div>
+                            <div class="video-meta">
+                                {{ result["viewCountText"] or result["viewCount"] }}
+                            </div>
+                        </div>
+                    </div>
+                </a>
+                {% endfor %}
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
 
     {% if type == 'short' %}
     <div class="section-header">
@@ -588,6 +646,83 @@
     let currentPage = {{ page if page else 1 }};
     let isLoading = false;
     let hasMore = true;
+    let isCseFetching = false;
+    const seenVideoIds = new Set();
+    const currentSearchQuery = "{{ query|default('') }}";
+
+    // Google カスタム検索エンジンの初期化設定
+    window.__gcse = {
+        parsetags: 'explicit',
+        initializationCallback: function() {
+            google.search.cse.element.render({
+                div: "hidden-cse-container",
+                tag: 'searchresults-only',
+                gname: 'shortsCse'
+            });
+            // ホーム画面でShortsデータが無い場合にCSE経由で初期ロード
+            if (!currentSearchQuery && $("#home-shorts-container").children().length === 0) {
+                triggerCseShortsSearch("人気 #shorts");
+            }
+        },
+        searchCallbacks: {
+            web: {
+                ready: function(name, q, promos, results) {
+                    isCseFetching = false;
+                    let videos = [];
+                    if (results && results.length > 0) {
+                        results.forEach(r => {
+                            const id = extractShortsId(r.unescapedUrl || r.url || "");
+                            if (id && !seenVideoIds.has(id)) {
+                                seenVideoIds.add(id);
+                                videos.push({ id: id, title: r.titleNoFormatting || r.title });
+                            }
+                        });
+                    }
+                    renderCseShortsResults(videos);
+                    return true;
+                }
+            }
+        }
+    };
+
+    function extractShortsId(url) {
+        const match = url.match(/(?:shorts\/|v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+        return match ? match[1] : null;
+    }
+
+    function triggerCseShortsSearch(query) {
+        if (isCseFetching) return;
+        isCseFetching = true;
+        const element = google.search.cse.element.getElement('shortsCse');
+        if (element) {
+            element.execute(query + " shorts site:youtube.com");
+        } else {
+            isCseFetching = false;
+        }
+    }
+
+    function renderCseShortsResults(videos) {
+        const container = $('#home-shorts-container');
+        videos.forEach(v => {
+            const html = `
+                <a href="/shorts/${v.id}" class="video-card is-short">
+                    <div class="thumbnail-box">
+                        <img class="thumbnail" loading="lazy" src="https://i.ytimg.com/vi/${v.id}/hqdefault.jpg" alt="${v.title}">
+                        <div class="short-badge">
+                            <span class="material-symbols-outlined" style="font-size:14px;">bolt</span>
+                            SHORTS
+                        </div>
+                    </div>
+                    <div class="video-info">
+                        <div class="video-details">
+                            <div class="video-title">${v.title}</div>
+                        </div>
+                    </div>
+                </a>
+            `;
+            container.append(html);
+        });
+    }
 
     $(document).ready(function () {
         $("#filter-toggle-btn").click(function () {
@@ -673,4 +808,5 @@
         $(alertBox).stop(true, true).fadeIn(300).delay(3000).fadeOut(500);
     }
 </script>
+<script async src="https://cse.google.com/cse.js?cx=c04ec9d20c4264b0d"></script>
 {% endblock %}
