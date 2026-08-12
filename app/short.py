@@ -274,7 +274,7 @@ async def stream_shorts_feed(q: str = Query(...)):
     async def generate_event_stream():
         """イベントストリーム生成"""
         seen: set[str] = set()
-        query_variants = [f"{q} shorts", f"{q} ショート"]
+        query_variants = [f"{q} shorts", f"{q} ショート", q]
         
         async with httpx.AsyncClient() as client:
             # 複数インスタンス、複数クエリ、複数ページを並行実行
@@ -282,7 +282,7 @@ async def stream_shorts_feed(q: str = Query(...)):
                 execute_instance_request(client, instance, search_query, page)
                 for instance in SEARXNG_INSTANCES
                 for search_query in query_variants
-                for page in range(1, 4)
+                for page in range(1, 5)
             ]
             tasks = [asyncio.ensure_future(c) for c in coros]
 
