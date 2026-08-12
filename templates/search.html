@@ -946,6 +946,7 @@
     }
 
     function loadNextPage() {
+        if (isLoading || !hasMore) return;
         isLoading = true;
         $("#infinite-loader").css("display", "flex");
 
