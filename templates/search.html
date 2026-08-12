@@ -301,7 +301,7 @@
         margin-bottom: 32px;
     }
 
-    /* ホーム画面上部のShorts横スクロールセクション（YouTube公式スタイル） */
+    /* ホーム画面上部のShorts横スクロールセクション（どんな画面サイズでも横並び最大3つ） */
     .home-shorts-section {
         margin-bottom: 32px;
         border-bottom: 1px solid var(--yt-border-color);
@@ -325,9 +325,13 @@
         border-radius: 3px;
     }
 
-    .home-shorts-container .video-card.is-short {
-        flex: 0 0 180px;
-        width: 180px;
+    /* どんな画面サイズでも画面幅に対して3つ以内の表示サイズに固定 (gap: 16pxが2つで32px分を引いて3等分) */
+    .home-shorts-container .video-card.is-short,
+    .home-shorts-container .skeleton-card {
+        flex: 0 0 calc((100% - 32px) / 3);
+        width: calc((100% - 32px) / 3);
+        max-width: calc((100% - 32px) / 3);
+        box-sizing: border-box;
     }
 
     .video-card.is-short {
@@ -837,6 +841,7 @@
             }
         });
 
+        // メインコンテンツの垂直無限スクロール
         $(window).on('scroll', function () {
             if (isLoading || !hasMore) return;
 
@@ -846,6 +851,21 @@
 
             if (scrollTop + windowHeight >= documentHeight - 300) {
                 loadNextPage();
+            }
+        });
+
+        // 横スライドShortsセクションの水平無限スクロール
+        $('#home-shorts-container').on('scroll', function () {
+            const container = $(this);
+            const scrollLeft = container.scrollLeft();
+            const innerWidth = container.innerWidth();
+            const scrollWidth = container[0].scrollWidth;
+
+            // 右端の近く（残り200px以内）に達したら自動で追加読み込み実行
+            if (scrollLeft + innerWidth >= scrollWidth - 200) {
+                if (!isCseFetching) {
+                    triggerCseShortsSearch(currentSearchQuery ? currentSearchQuery : "人気 #shorts", true);
+                }
             }
         });
     });
