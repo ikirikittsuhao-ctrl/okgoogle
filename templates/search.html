@@ -92,10 +92,10 @@
         font-weight: 700;
     }
 
-    /* レスポンシブグリッドレイアウト */
+    /* レスポンシブグリッドレイアウト（画面サイズに関わらず横並び最大3つまで） */
     .video-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        grid-template-columns: repeat(3, 1fr);
         gap: 20px 16px;
         width: 100%;
     }
@@ -309,12 +309,12 @@
 
     .shorts-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(160px, 180px));
         gap: 12px;
         margin-bottom: 32px;
     }
 
-    /* ホーム画面上部のShorts横スクロールセクション（どんな画面サイズでも横並び最大3つ） */
+    /* ホーム画面上部のShorts横スクロールセクション */
     .home-shorts-section {
         margin-bottom: 32px;
         border-bottom: 1px solid var(--yt-border-color);
@@ -338,12 +338,12 @@
         border-radius: 3px;
     }
 
-    /* どんな画面サイズでも画面幅に対して3つ以内の表示サイズに固定 (gap: 16pxが2つで32px分を引いて3等分) */
+    /* Short動画の幅を固定でスマート（細身）に指定 */
     .home-shorts-container .video-card.is-short,
     .home-shorts-container .skeleton-card {
-        flex: 0 0 calc((100% - 32px) / 3);
-        width: calc((100% - 32px) / 3);
-        max-width: calc((100% - 32px) / 3);
+        flex: 0 0 160px;
+        width: 160px;
+        max-width: 160px;
         box-sizing: border-box;
     }
 
