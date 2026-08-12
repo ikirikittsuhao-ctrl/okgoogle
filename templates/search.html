@@ -545,7 +545,7 @@
         </div>
     </div>
 
-    {% if not query %}
+    {% if not query or type == 'video' or not type %}
     <div class="home-shorts-section">
         <div class="section-header">
         </div>
@@ -704,9 +704,9 @@
                 tag: 'searchresults-only',
                 gname: 'shortsCse'
             });
-            // ホーム画面でShortsデータが無い場合にCSE経由で初期ロード
-            if (!currentSearchQuery && $("#home-shorts-container").find('.video-card.is-short').length === 0) {
-                triggerCseShortsSearch("人気 #shorts");
+            // ホーム画面または検索時でShortsデータが無い場合にCSE経由で初期ロード
+            if ($("#home-shorts-container").length > 0 && $("#home-shorts-container").find('.video-card.is-short').length === 0) {
+                triggerCseShortsSearch(currentSearchQuery ? currentSearchQuery : "人気 #shorts");
             }
         },
         searchCallbacks: {
