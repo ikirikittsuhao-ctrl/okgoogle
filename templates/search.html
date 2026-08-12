@@ -205,6 +205,9 @@
 
     .video-author {
         margin-bottom: 2px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
     }
 
     .video-author:hover {
@@ -229,56 +232,6 @@
             opacity: 1;
             transform: translateY(0);
         }
-    }
-
-    /* --- 読み込みアニメーション（スケルトン） --- */
-    .skeleton-card {
-        display: flex;
-        flex-direction: column;
-        border-radius: 12px;
-        overflow: hidden;
-        pointer-events: none;
-    }
-
-    .skeleton-thumbnail {
-        width: 100%;
-        padding-top: 56.25%;
-        border-radius: 12px;
-        background-color: var(--yt-chip-bg, #e5e5e5);
-    }
-
-    .skeleton-info {
-        display: flex;
-        padding: 12px 0 0 0;
-        gap: 12px;
-    }
-
-    .skeleton-details {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        gap: 8px;
-    }
-
-    .skeleton-line {
-        height: 14px;
-        border-radius: 4px;
-        background-color: var(--yt-chip-bg, #e5e5e5);
-    }
-
-    .skeleton-line.title-1 { width: 90%; height: 16px; }
-    .skeleton-line.title-2 { width: 60%; height: 16px; }
-    .skeleton-line.author  { width: 40%; }
-    .skeleton-line.meta    { width: 50%; }
-
-    .skeleton-pulse {
-        animation: skeletonLoading 1.5s infinite ease-in-out;
-    }
-
-    @keyframes skeletonLoading {
-        0% { opacity: 0.4; }
-        50% { opacity: 0.8; }
-        100% { opacity: 0.4; }
     }
 
     /* Shorts, チャンネル, プレイリスト用のレイアウト補正 */
@@ -383,6 +336,40 @@
 
     .video-card.is-short .video-info {
         padding: 8px 4px;
+    }
+
+    /* YouTube公式風 スケルトンローディング（読み込み中アニメーション） */
+    .skeleton-card {
+        flex: 0 0 180px;
+        width: 180px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        animation: pulse 1.5s infinite ease-in-out;
+    }
+
+    .skeleton-thumb {
+        width: 100%;
+        aspect-ratio: 9 / 16;
+        background-color: var(--yt-chip-bg);
+        border-radius: 12px;
+    }
+
+    .skeleton-text {
+        width: 90%;
+        height: 14px;
+        background-color: var(--yt-chip-bg);
+        border-radius: 4px;
+    }
+
+    .skeleton-text.short {
+        width: 60%;
+    }
+
+    @keyframes pulse {
+        0% { opacity: 0.6; }
+        50% { opacity: 0.3; }
+        100% { opacity: 0.6; }
     }
 
     .yt-channel-card {
@@ -498,18 +485,15 @@
             gap: 16px;
         }
 
-        .video-thumbnail,
-        .skeleton-thumbnail {
+        .video-thumbnail {
             border-radius: 0; /* スマホ全幅表示時に角丸を解除（YouTube公式風） */
         }
         
-        .video-card,
-        .skeleton-card {
+        .video-card {
             border-radius: 0;
         }
 
-        .video-info,
-        .skeleton-info {
+        .video-info {
             padding: 10px 12px 0 12px;
         }
 
@@ -564,8 +548,6 @@
     {% if not query or type == 'video' or not type %}
     <div class="home-shorts-section">
         <div class="section-header">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" style="width: 24px; height: 24px; fill: var(--yt-brand-red, #ff0000);"><path d="M512.1 116.3C486.7 68.5 426.9 50.2 378.6 75.3L166.9 186.5C118.6 211.7 100.1 270.8 125.5 318.6C142.6 350.7 175.2 369.5 209.4 370.8L169.7 391.7C121.4 416.8 102.8 476 128.2 523.8C153.6 571.6 213.4 589.9 261.7 564.8L473.5 453.5C521.8 428.3 540.3 369.2 514.9 321.4C497.8 289.3 465.2 270.5 431 269.2L470.7 248.3C519 223.2 537.5 164 512.1 116.3zM392.5 320.3L264.3 399L264.3 241.1L392.5 320.2z"/></svg>
-            <span>short</span>
         </div>
         <div class="home-shorts-container" id="home-shorts-container">
             {% if shorts_results %}
@@ -598,8 +580,6 @@
 
     {% if type == 'short' %}
     <div class="section-header">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" style="width: 24px; height: 24px; fill: var(--yt-brand-red, #ff0000);"><path d="M512.1 116.3C486.7 68.5 426.9 50.2 378.6 75.3L166.9 186.5C118.6 211.7 100.1 270.8 125.5 318.6C142.6 350.7 175.2 369.5 209.4 370.8L169.7 391.7C121.4 416.8 102.8 476 128.2 523.8C153.6 571.6 213.4 589.9 261.7 564.8L473.5 453.5C521.8 428.3 540.3 369.2 514.9 321.4C497.8 289.3 465.2 270.5 431 269.2L470.7 248.3C519 223.2 537.5 164 512.1 116.3zM392.5 320.3L264.3 399L264.3 241.1L392.5 320.2z"/></svg>
-        <span>short</span>
     </div>
     <div class="shorts-grid" id="results-container">
         {% for result in results %}
@@ -618,7 +598,6 @@
         </a>
         {% endfor %}
     </div>
-    {% endif %}
 
     {% elif type == 'channel' %}
     <div class="yt-search-list" id="results-container">
@@ -712,9 +691,83 @@
     let currentPage = {{ page if page else 1 }};
     let isLoading = false;
     let hasMore = true;
-    const seenVideoIds_page = new Set();
+    let isCseFetching = false;
+    const seenVideoIds = new Set();
     const currentSearchQuery = "{{ query|default('') }}";
-    const currentType = "{{ type|default('video') }}";
+
+    // Google カスタム検索エンジンの初期化設定
+    window.__gcse = {
+        parsetags: 'explicit',
+        initializationCallback: function() {
+            google.search.cse.element.render({
+                div: "hidden-cse-container",
+                tag: 'searchresults-only',
+                gname: 'shortsCse'
+            });
+            // ホーム画面または検索時でShortsデータが無い場合にCSE経由で初期ロード
+            if ($("#home-shorts-container").length > 0 && $("#home-shorts-container").find('.video-card.is-short').length === 0) {
+                triggerCseShortsSearch(currentSearchQuery ? currentSearchQuery : "人気 #shorts");
+            }
+        },
+        searchCallbacks: {
+            web: {
+                ready: function(name, q, promos, results) {
+                    isCseFetching = false;
+                    let videos = [];
+                    if (results && results.length > 0) {
+                        results.forEach(r => {
+                            const id = extractShortsId(r.unescapedUrl || r.url || "");
+                            if (id && !seenVideoIds.has(id)) {
+                                seenVideoIds.add(id);
+                                videos.push({ id: id, title: r.titleNoFormatting || r.title });
+                            }
+                        });
+                    }
+                    renderCseShortsResults(videos);
+                    return true;
+                }
+            }
+        }
+    };
+
+    function extractShortsId(url) {
+        const match = url.match(/(?:shorts\/|v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+        return match ? match[1] : null;
+    }
+
+    function triggerCseShortsSearch(query) {
+        if (isCseFetching) return;
+        isCseFetching = true;
+        const element = google.search.cse.element.getElement('shortsCse');
+        if (element) {
+            element.execute(query + " shorts site:youtube.com");
+        } else {
+            isCseFetching = false;
+        }
+    }
+
+    function renderCseShortsResults(videos) {
+        const container = $('#home-shorts-container');
+        
+        // 初回描写時にスケルトンカードを消去
+        container.find('.skeleton-card').remove();
+
+        videos.forEach(v => {
+            const html = `
+                <a href="/shorts/${v.id}" class="video-card is-short">
+                    <div class="thumbnail-box">
+                        <img class="thumbnail" loading="lazy" src="https://i.ytimg.com/vi/${v.id}/hqdefault.jpg" alt="${v.title}">
+                    </div>
+                    <div class="video-info">
+                        <div class="video-details">
+                            <div class="video-title">${v.title}</div>
+                        </div>
+                    </div>
+                </a>
+            `;
+            container.append(html);
+        });
+    }
 
     $(document).ready(function () {
         $("#filter-toggle-btn").click(function () {
@@ -728,22 +781,17 @@
             }
         });
 
-        // Shorts検索ページの場合は別の無限スクロール処理を使用
-        if (currentType === 'short') {
-            initShortsInfiniteScroll();
-        } else {
-            $(window).on('scroll', function () {
-                if (isLoading || !hasMore) return;
+        $(window).on('scroll', function () {
+            if (isLoading || !hasMore) return;
 
-                const scrollTop = $(window).scrollTop();
-                const windowHeight = $(window).height();
-                const documentHeight = $(document).height();
+            const scrollTop = $(window).scrollTop();
+            const windowHeight = $(window).height();
+            const documentHeight = $(document).height();
 
-                if (scrollTop + windowHeight >= documentHeight - 300) {
-                    loadNextPage();
-                }
-            });
-        }
+            if (scrollTop + windowHeight >= documentHeight - 300) {
+                loadNextPage();
+            }
+        });
     });
 
     function applyFilter(filterType) {
@@ -805,6 +853,5 @@
         $(alertBox).stop(true, true).fadeIn(300).delay(3000).fadeOut(500);
     }
 </script>
-<script src="/app/js/short.js"></script>
 <script async src="https://cse.google.com/cse.js?cx=c04ec9d20c4264b0d"></script>
 {% endblock %}
