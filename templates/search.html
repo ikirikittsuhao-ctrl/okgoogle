@@ -692,6 +692,9 @@
     let isLoading = false;
     let hasMore = true;
     let isCseFetching = false;
+    let cseRetryCount = 0;
+    const MAX_CSE_RETRIES = 10;
+    const TARGET_SHORTS_COUNT = 12;
     const seenVideoIds = new Set();
     const currentSearchQuery = "{{ query|default('') }}";
 
@@ -706,13 +709,12 @@
             });
             // ホーム画面または検索時でShortsデータが無い場合にCSE経由で初期ロード
             if ($("#home-shorts-container").length > 0 && $("#home-shorts-container").find('.video-card.is-short').length === 0) {
-                triggerCseShortsSearch(currentSearchQuery ? currentSearchQuery : "人気 #shorts");
+                triggerCseShortsSearch(currentSearchQuery ? currentSearchQuery : "人気");
             }
         },
         searchCallbacks: {
             web: {
                 ready: function(name, q, promos, results) {
-                    isCseFetching = false;
                     let videos = [];
                     if (results && results.length > 0) {
                         results.forEach(r => {
@@ -724,6 +726,22 @@
                         });
                     }
                     renderCseShortsResults(videos);
+
+                    // 12件取得できるまで自動で追加取得（試行）を実行
+                    if (seenVideoIds.size < TARGET_SHORTS_COUNT && cseRetryCount < MAX_CSE_RETRIES && results && results.length > 0) {
+                        cseRetryCount++;
+                        setTimeout(function() {
+                            const element = google.search.cse.element.getElement('shortsCse');
+                            if (element && typeof element.nextPage === 'function') {
+                                element.nextPage();
+                            } else {
+                                isCseFetching = false;
+                            }
+                        }, 300);
+                    } else {
+                        isCseFetching = false;
+                    }
+
                     return true;
                 }
             }
@@ -738,9 +756,10 @@
     function triggerCseShortsSearch(query) {
         if (isCseFetching) return;
         isCseFetching = true;
+        cseRetryCount = 0;
         const element = google.search.cse.element.getElement('shortsCse');
         if (element) {
-            element.execute(query + " shorts site:youtube.com");
+            element.execute(query + " site:youtube.com/shorts");
         } else {
             isCseFetching = false;
         }
