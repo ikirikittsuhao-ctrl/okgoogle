@@ -156,8 +156,18 @@ async def search_shorts_from_instance(
     instance: str,
     search_query: str,
     page: int = 1
-) -> List[Dict[str, Any]]:
-    """単一のSearXNGインスタンスからShorts検索"""
+) -> tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    """単一のSearXNGインスタンスからShorts検索（デバッグ情報付き）"""
+    debug_info = {
+        "instance": instance,
+        "query": search_query,
+        "page": page,
+        "status": "pending",
+        "error": None,
+        "total_results": 0,
+        "youtube_results": 0,
+    }
+    
     try:
         async with httpx.AsyncClient() as client:
             resp = await client.get(
@@ -174,17 +184,23 @@ async def search_shorts_from_instance(
             data = resp.json()
             
             results = data.get("results", [])
+            debug_info["total_results"] = len(results)
+            debug_info["status"] = "success"
+            
             shorts = []
             
             for result in results:
                 short = process_searxng_result(result)
                 if short:
                     shorts.append(short)
+                    debug_info["youtube_results"] += 1
             
-            return shorts
+            return shorts, debug_info
     except Exception as e:
+        debug_info["status"] = "error"
+        debug_info["error"] = str(e)
         print(f"Error searching {instance}: {str(e)}")
-        return []
+        return [], debug_info
 
 
 @router.get("/v1/shorts/query")
@@ -203,16 +219,22 @@ async def fetch_shorts_by_query(q: str = Query(...)):
         # 結果を統合
         all_shorts = []
         seen = set()
-        for shorts in results_list:
+        debug_data = []
+        
+        for shorts, debug_info in results_list:
+            debug_data.append(debug_info)
             for short in shorts:
                 video_id = short.get("videoId")
                 if video_id not in seen:
                     seen.add(video_id)
                     all_shorts.append(short)
         
-        return JSONResponse({"items": all_shorts})
+        return JSONResponse({
+            "items": all_shorts,
+            "debug": debug_data
+        })
     except Exception as e:
-        return JSONResponse({"error": str(e), "items": []}, status_code=502)
+        return JSONResponse({"error": str(e), "items": [], "debug": []}, status_code=502)
 
 
 @router.get("/v1/shorts/query/next")
@@ -231,16 +253,22 @@ async def fetch_shorts_next_page(q: str = Query(...), page: int = Query(2)):
         # 結果を統合
         all_shorts = []
         seen = set()
-        for shorts in results_list:
+        debug_data = []
+        
+        for shorts, debug_info in results_list:
+            debug_data.append(debug_info)
             for short in shorts:
                 video_id = short.get("videoId")
                 if video_id not in seen:
                     seen.add(video_id)
                     all_shorts.append(short)
         
-        return JSONResponse({"items": all_shorts})
+        return JSONResponse({
+            "items": all_shorts,
+            "debug": debug_data
+        })
     except Exception as e:
-        return JSONResponse({"error": str(e), "items": []}, status_code=502)
+        return JSONResponse({"error": str(e), "items": [], "debug": []}, status_code=502)
 
 
 @router.get("/v1/shorts/stream")
@@ -261,7 +289,7 @@ async def stream_shorts_feed(q: str = Query(...)):
         ]
         
         for coro in asyncio.as_completed(tasks):
-            batch = await coro
+            batch, debug_info = await coro
             new_items = []
             
             for short in batch:
@@ -285,3 +313,46 @@ async def stream_shorts_feed(q: str = Query(...)):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get("/v1/shorts/debug")
+async def debug_searxng(q: str = Query("猫")):
+    """SearXNGインスタンスのデバッグエンドポイント"""
+    debug_results = []
+    
+    for instance in SEARXNG_INSTANCES:
+        try:
+            async with httpx.AsyncClient() as client:
+                # 生のAPIレスポンスを取得
+                resp = await client.get(
+                    f"{instance}search",
+                    params={
+                        "q": f"{q} shorts",
+                        "format": "json",
+                        "categories": "video",
+                        "pageno": 1,
+                    },
+                    timeout=httpx.Timeout(15.0),
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                
+                results = data.get("results", [])
+                
+                debug_results.append({
+                    "instance": instance,
+                    "status": "success",
+                    "total_results": len(results),
+                    "sample_results": results[:3],  # 最初の3件を表示
+                })
+        except Exception as e:
+            debug_results.append({
+                "instance": instance,
+                "status": "error",
+                "error": str(e),
+            })
+    
+    return JSONResponse({
+        "query": q,
+        "instances": debug_results
+    })
