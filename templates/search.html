@@ -141,7 +141,8 @@
     }
 
     /* ホバー時のサムネイル微拡大（ズームイン効果） */
-    .video-card:hover .video-thumbnail img {
+    .video-card:hover .video-thumbnail img,
+    .yt-playlist-card:hover .video-thumbnail img {
         transform: scale(1.05);
     }
 
@@ -308,8 +309,8 @@
 
     .shorts-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: 16px;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 12px;
         margin-bottom: 32px;
     }
 
@@ -421,17 +422,57 @@
         object-fit: cover;
     }
 
+    /* YouTube本家風 プレイリストカードスタイル */
     .yt-playlist-card {
         display: flex;
         gap: 16px;
         text-decoration: none;
         color: inherit;
         border-radius: 12px;
-        padding: 4px;
+        padding: 8px;
         transition: background-color 0.15s ease;
+        margin-bottom: 8px;
     }
     .yt-playlist-card:hover {
         background-color: var(--yt-hover-bg);
+    }
+
+    .yt-playlist-thumbnail-wrapper {
+        position: relative;
+        flex: 0 0 360px;
+        max-width: 360px;
+        aspect-ratio: 16 / 9;
+        background-color: var(--yt-chip-bg);
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .yt-playlist-thumbnail-wrapper img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.3s cubic-bezier(0.2, 0, 0, 1);
+    }
+
+    .playlist-overlay-badge {
+        position: absolute;
+        bottom: 8px;
+        right: 8px;
+        background: rgba(0, 0, 0, 0.8);
+        color: #ffffff;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        backdrop-filter: blur(2px);
+        z-index: 1;
+    }
+
+    .playlist-overlay-badge .material-symbols-outlined {
+        font-size: 16px;
     }
 
     .yt-playlist-details {
@@ -457,6 +498,21 @@
     .yt-playlist-meta {
         font-size: 12px;
         color: var(--yt-text-secondary);
+        margin-bottom: 12px;
+    }
+
+    .yt-playlist-view-all {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--yt-text-secondary);
+        margin-top: auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .yt-playlist-card:hover .yt-playlist-view-all {
+        color: var(--yt-text-primary);
     }
 
     #infinite-loader {
@@ -524,6 +580,17 @@
         .yt-channel-avatar-large img {
             width: 80px;
             height: 80px;
+        }
+
+        .yt-playlist-card {
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .yt-playlist-thumbnail-wrapper {
+            flex: none;
+            width: 100%;
+            max-width: 100%;
         }
     }
 </style>
@@ -641,14 +708,20 @@
     <div class="yt-search-list" id="results-container">
         {% for result in results %}
         <a href="/playlist?list={{ result['playlistId'] }}" class="yt-playlist-card">
-            <div class="video-thumbnail" style="flex: 0 0 360px; max-width: 360px; padding-top: 0; aspect-ratio: 16/9;">
-                <img loading="lazy" src="/proxy/thumb?v={{ result['playlistId'] }}" onerror="this.src='{{ result['videoThumbnails'][0]['url'] if result['videoThumbnails'] else 'https://i.ytimg.com/vi/mqdefault.jpg' }}';">
-                <span class="length-tag">PLAYLIST</span>
+            <div class="yt-playlist-thumbnail-wrapper">
+                <img loading="lazy" src="{{ result['videoThumbnails'][0]['url'] if result['videoThumbnails'] else (('https://i.ytimg.com/vi/' + result['videos'][0]['videoId'] + '/hqdefault.jpg') if result['videos'] and result['videos'][0]['videoId'] else 'https://i.ytimg.com/vi/mqdefault.jpg') }}" onerror="this.src='https://i.ytimg.com/vi/mqdefault.jpg';" alt="playlist thumbnail">
+                <div class="playlist-overlay-badge">
+                    <span class="material-symbols-outlined">playlist_play</span>
+                    <span>{{ result['videoCount'] if result['videoCount'] else '再生リスト' }}</span>
+                </div>
             </div>
             <div class="yt-playlist-details">
                 <h3 class="yt-playlist-title">{{ result['title'] }}</h3>
                 <div class="yt-playlist-meta">
-                    {{ result['videoCount'] }} 本の動画 • チャンネル: {{ result['author'] }}
+                    {{ result['author'] }} • 再生リスト
+                </div>
+                <div class="yt-playlist-view-all">
+                    再生リスト全体を見る
                 </div>
             </div>
         </a>
