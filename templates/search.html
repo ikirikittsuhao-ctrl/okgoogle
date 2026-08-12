@@ -240,11 +240,17 @@
         pointer-events: none;
     }
 
-    .skeleton-thumbnail {
+    .skeleton-thumbnail, .skeleton-thumb {
         width: 100%;
         padding-top: 56.25%;
         border-radius: 12px;
         background-color: var(--yt-chip-bg, #e5e5e5);
+        animation: skeletonLoading 1.5s infinite ease-in-out;
+    }
+
+    .home-shorts-container .skeleton-card .skeleton-thumb {
+        padding-top: 0;
+        aspect-ratio: 9 / 16;
     }
 
     .skeleton-info {
@@ -260,10 +266,16 @@
         gap: 8px;
     }
 
-    .skeleton-line {
+    .skeleton-line, .skeleton-text {
         height: 14px;
         border-radius: 4px;
         background-color: var(--yt-chip-bg, #e5e5e5);
+        margin-top: 6px;
+        animation: skeletonLoading 1.5s infinite ease-in-out;
+    }
+
+    .skeleton-text.short {
+        width: 60%;
     }
 
     .skeleton-line.title-1 { width: 90%; height: 16px; }
@@ -480,17 +492,6 @@
         font-size: 14px;
     }
 
-    #loading-overlay {
-        position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(0, 0, 0, 0.4);
-        backdrop-filter: blur(4px);
-        display: none;
-        justify-content: center;
-        align-items: center;
-        z-index: 3000;
-    }
-
     #hidden-cse-container {
         display: none;
     }
@@ -530,10 +531,6 @@
 
 {% block content %}
 <div id="hidden-cse-container"></div>
-
-<div id="loading-overlay">
-    <div class="yt-spinner"></div>
-</div>
 
 <div id="custom-alert">
     <div style="display: flex; align-items: center; gap: 10px;">
@@ -775,6 +772,12 @@
 
         if (!append) {
             seenVideoIds.clear();
+        } else {
+            // 追加読み込み時にスクロールエリアへスケルトンアニメーション（カード）を追加
+            const container = $('#home-shorts-container');
+            for(let i = 0; i < 3; i++) {
+                container.append('<div class="skeleton-card temp-skeleton"><div class="skeleton-thumb"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>');
+            }
         }
 
         // 既存のタイマーがあればクリア
@@ -803,13 +806,14 @@
             element.execute(query + decor + " site:youtube.com/shorts");
         } else {
             isCseFetching = false;
+            $('#home-shorts-container').find('.temp-skeleton').remove();
         }
     }
 
     function renderCseShortsResults(videos) {
         const container = $('#home-shorts-container');
         
-        // 初回描写時にスケルトンカードを消去
+        // 初回描写時および追加読み込み時のスケルトンカードを消去
         container.find('.skeleton-card').remove();
 
         videos.forEach(v => {
@@ -832,13 +836,6 @@
     $(document).ready(function () {
         $("#filter-toggle-btn").click(function () {
             $("#filter-panel").slideToggle(200);
-        });
-
-        $(document).on('click', 'a', function (e) {
-            const href = $(this).attr('href');
-            if (href && !href.startsWith('#') && !href.startsWith('javascript') && !$(this).attr('target')) {
-                $('#loading-overlay').css('display', 'flex');
-            }
         });
 
         // メインコンテンツの垂直無限スクロール
@@ -871,7 +868,6 @@
     });
 
     function applyFilter(filterType) {
-        $('#loading-overlay').css('display', 'flex');
         document.getElementById('search-type').value = filterType;
         document.getElementById('search-form').submit();
     }
@@ -879,6 +875,24 @@
     function loadNextPage() {
         isLoading = true;
         $("#infinite-loader").css("display", "flex");
+
+        // 追加読み込みアニメーション（スケルトンカードの生成）
+        const skeletonHtml = `
+            <div class="skeleton-card temp-main-skeleton">
+                <div class="skeleton-thumbnail"></div>
+                <div class="skeleton-info">
+                    <div class="skeleton-details">
+                        <div class="skeleton-line title-1"></div>
+                        <div class="skeleton-line title-2"></div>
+                        <div class="skeleton-line author"></div>
+                        <div class="skeleton-line meta"></div>
+                    </div>
+                </div>
+            </div>
+        `;
+        for(let i = 0; i < 4; i++) {
+            $('#results-container').append(skeletonHtml);
+        }
 
         const nextPage = currentPage + 1;
         const query = encodeURIComponent("{{ query }}");
@@ -891,6 +905,7 @@
             type: 'GET',
             dataType: 'html',
             success: function (response) {
+                $('#results-container').find('.temp-main-skeleton').remove();
                 const newItems = $(response).find('#results-container').html();
                 
                 if (newItems && $.trim(newItems).length > 0) {
@@ -901,6 +916,7 @@
                 }
             },
             error: function () {
+                $('#results-container').find('.temp-main-skeleton').remove();
                 hasMore = false;
                 showNotify("追加データの読み込みに失敗しました。", true);
             },
