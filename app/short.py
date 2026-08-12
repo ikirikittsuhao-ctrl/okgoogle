@@ -11,25 +11,10 @@ from core import INNERTUBE_BASE, get_client
 
 router = APIRouter()
 
-MIRROR_NODES = [
-    "https://xeroxyt-nt-apiv1-0ydt.onrender.com",
-    "https://xeroxyt-nt-apiv1-5vsz.onrender.com",
-    "https://xeroxyt-nt-apiv1-m28t.onrender.com",
+SEARXNG_INSTANCES = [
+    "https://search.unredacted.org/",
+    "https://searx.perennialte.ch/",
 ]
-
-
-def convert_timestamp_to_seconds(text: str) -> int:
-    if not text:
-        return 0
-    try:
-        parts = [int(p) for p in text.strip().split(":")]
-        if len(parts) == 2:
-            return parts[0] * 60 + parts[1]
-        if len(parts) == 3:
-            return parts[0] * 3600 + parts[1] * 60 + parts[2]
-    except (ValueError, TypeError):
-        pass
-    return 0
 
 
 def extract_view_number(raw_text: str) -> int:
@@ -60,6 +45,29 @@ def extract_view_number(raw_text: str) -> int:
         return 0
 
 
+def extract_video_id_from_url(url: str) -> Optional[str]:
+    """YouTubeのURLからvideoIdを抽出"""
+    if not url:
+        return None
+    
+    # youtube.com/watch?v=xxxxx
+    match = re.search(r'youtube\.com/watch\?v=([a-zA-Z0-9_-]{11})', url)
+    if match:
+        return match.group(1)
+    
+    # youtu.be/xxxxx
+    match = re.search(r'youtu\.be/([a-zA-Z0-9_-]{11})', url)
+    if match:
+        return match.group(1)
+    
+    # youtube.com/shorts/xxxxx
+    match = re.search(r'youtube\.com/shorts/([a-zA-Z0-9_-]{11})', url)
+    if match:
+        return match.group(1)
+    
+    return None
+
+
 def format_short_payload(
     video_id: str,
     title: str,
@@ -72,7 +80,7 @@ def format_short_payload(
     published_text: str = "",
 ) -> Dict[str, Any]:
     if not thumbnail_url:
-        thumbnail_url = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
+        thumbnail_url = f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"
 
     return {
         "videoId": video_id,
@@ -83,7 +91,7 @@ def format_short_payload(
         "authorId": author_id,
         "authorThumbnails": [],
         "viewCount": view_count,
-        "viewCountText": view_count_text or (f"{view_count:,} views" if view_count else ""),
+        "viewCountText": view_count_text or (f"{view_count:,}" if view_count else ""),
         "videoThumbnails": [
             {"url": thumbnail_url, "quality": "high"}
         ],
@@ -91,344 +99,189 @@ def format_short_payload(
     }
 
 
-def process_innertube_response(data: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Optional[str]]:
-    shorts = []
-    cont_key = data.get("_contKey")
-    results = data.get("results") or data.get("items") or []
+def process_searxng_result(result: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """SearXNGの検索結果をShorts形式に変換"""
+    if not isinstance(result, dict):
+        return None
 
-    for item in results:
-        if not isinstance(item, dict):
-            continue
+    url = result.get("url", "")
+    video_id = extract_video_id_from_url(url)
+    
+    if not video_id:
+        return None
 
-        item_type = item.get("type", "")
-        is_reel = (item_type == "Reel")
+    title = result.get("title", "")
+    if not title:
+        return None
 
-        dur_secs = 0
-        dur = item.get("duration", {})
-        if isinstance(dur, dict):
-            dur_secs = dur.get("seconds", 0) or 0
-        elif isinstance(dur, (int, float)):
-            dur_secs = int(dur)
+    # 説明文からビュー数や投稿者を抽出
+    content = result.get("content", "") or ""
+    author = ""
+    view_count_text = ""
+    
+    # 説明文から投稿者を抽出 (例: "by Channel Name")
+    author_match = re.search(r'by\s+([^\-\n•]+)', content)
+    if author_match:
+        author = author_match.group(1).strip()
+    
+    # 説明文からビュー数を抽出
+    view_match = re.search(r'(\d+(?:[,\.]\d+)*)\s*(?:views?|回)', content, re.IGNORECASE)
+    if view_match:
+        view_count_text = view_match.group(1)
 
-        is_short_video = (item_type == "Video" and 0 < dur_secs <= 90)
+    view_count = extract_view_number(view_count_text)
 
-        if not (is_reel or is_short_video):
-            continue
+    # サムネイル取得
+    thumbnail_url = f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"
+    
+    # SearXNG metadata からサムネイルを取得
+    metadata = result.get("metadata", {})
+    if isinstance(metadata, dict):
+        img = metadata.get("img", {})
+        if isinstance(img, dict) and img.get("url"):
+            thumbnail_url = img["url"]
 
-        video_id = item.get("id") or item.get("videoId") or ""
-        if not video_id:
-            continue
-
-        title_raw = item.get("title", "")
-        if isinstance(title_raw, dict):
-            runs = title_raw.get("runs", [{}])
-            title = title_raw.get("text", "") or (runs[0].get("text", "") if runs else "")
-        else:
-            title = str(title_raw)
-
-        author_raw = item.get("author", {})
-        author, author_id = "", ""
-        if isinstance(author_raw, dict):
-            author = author_raw.get("name", "") or str(author_raw.get("text", ""))
-            ep = author_raw.get("endpoint", {}) or {}
-            author_id = author_raw.get("id", "") or ep.get("payload", {}).get("browseId", "")
-        elif author_raw:
-            author = str(author_raw)
-
-        vc_raw = item.get("view_count") or item.get("short_view_count") or {}
-        vc_text = vc_raw.get("text", "0") if isinstance(vc_raw, dict) else str(vc_raw)
-        view_count = extract_view_number(vc_text)
-
-        thumbs = item.get("thumbnails", []) or []
-        thumb_url = thumbs[0].get("url") if thumbs and isinstance(thumbs[0], dict) else None
-
-        shorts.append(
-            format_short_payload(
-                video_id=video_id,
-                title=title,
-                author=author,
-                author_id=author_id,
-                length_seconds=dur_secs if is_short_video else 30,
-                view_count=view_count,
-                view_count_text=vc_text,
-                thumbnail_url=thumb_url,
-            )
-        )
-
-    return shorts, cont_key
+    return format_short_payload(
+        video_id=video_id,
+        title=title,
+        author=author,
+        length_seconds=30,
+        view_count=view_count,
+        view_count_text=view_count_text,
+        thumbnail_url=thumbnail_url,
+    )
 
 
 @router.get("/v1/shorts/query")
 async def fetch_shorts_by_query(q: str = Query(...)):
+    """SearXNG APIを使用してShortsを検索"""
     try:
-        client = await get_client()
-        search_query = q if "#shorts" in q.lower() else f"{q} #shorts"
-
-        resp = await client.get(
-            f"{INNERTUBE_BASE}/search",
-            params={"q": search_query, "type": "all"},
-            timeout=httpx.Timeout(12.0),
-        )
-        resp.raise_for_status()
-        shorts, cont_key = process_innertube_response(resp.json())
-        return JSONResponse({"items": shorts, "contKey": cont_key})
+        async with httpx.AsyncClient() as client:
+            for instance in SEARXNG_INSTANCES:
+                try:
+                    # SearXNG JSON API を使用
+                    search_query = f"{q} shorts"
+                    
+                    resp = await client.get(
+                        f"{instance}search",
+                        params={
+                            "q": search_query,
+                            "format": "json",
+                            "categories": "video",
+                        },
+                        timeout=httpx.Timeout(12.0),
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    
+                    results = data.get("results", [])
+                    shorts = []
+                    
+                    for result in results:
+                        short = process_searxng_result(result)
+                        if short:
+                            shorts.append(short)
+                    
+                    if shorts:
+                        return JSONResponse({"items": shorts})
+                
+                except Exception:
+                    continue
+        
+        return JSONResponse({"items": []})
     except Exception as e:
         return JSONResponse({"error": str(e), "items": []}, status_code=502)
 
 
 @router.get("/v1/shorts/query/next")
-async def fetch_shorts_next_page(contKey: str = Query(...)):
+async def fetch_shorts_next_page(q: str = Query(...), page: int = Query(2)):
+    """次ページのShorts検索結果を取得"""
     try:
-        client = await get_client()
-        resp = await client.get(
-            f"{INNERTUBE_BASE}/search/continue",
-            params={"key": contKey},
-            timeout=httpx.Timeout(12.0),
-        )
-        resp.raise_for_status()
-        shorts, cont_key = process_innertube_response(resp.json())
-        return JSONResponse({"items": shorts, "contKey": cont_key})
+        async with httpx.AsyncClient() as client:
+            for instance in SEARXNG_INSTANCES:
+                try:
+                    search_query = f"{q} shorts"
+                    
+                    resp = await client.get(
+                        f"{instance}search",
+                        params={
+                            "q": search_query,
+                            "format": "json",
+                            "categories": "video",
+                            "pageno": page,
+                        },
+                        timeout=httpx.Timeout(12.0),
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                    
+                    results = data.get("results", [])
+                    shorts = []
+                    
+                    for result in results:
+                        short = process_searxng_result(result)
+                        if short:
+                            shorts.append(short)
+                    
+                    if shorts:
+                        return JSONResponse({"items": shorts})
+                
+                except Exception:
+                    continue
+        
+        return JSONResponse({"items": []})
     except Exception as e:
         return JSONResponse({"error": str(e), "items": []}, status_code=502)
 
 
-def check_short_eligibility(item: Dict[str, Any]) -> bool:
-    """Shortsの対象かどうかを判定する（より寛容な判定）"""
-    if not isinstance(item, dict):
-        return False
-
-    # ShortsLockupView は確実にShorts
-    if item.get("type") == "ShortsLockupView":
-        return True
-
-    # on_tap_endpoint で videoId があれば Shorts の可能性が高い
-    on_tap = item.get("on_tap_endpoint") or {}
-    if isinstance(on_tap, dict):
-        payload = on_tap.get("payload") or {}
-        if isinstance(payload, dict) and payload.get("videoId"):
-            return True
-
-    # reelWatchEndpoint は Shorts
-    ep = item.get("endpoint") or {}
-    if isinstance(ep, dict) and ep.get("name") == "reelWatchEndpoint":
-        return True
-
-    # thumbnail_overlays で SHORTS タグがあれば Shorts
-    for ov in (item.get("thumbnail_overlays") or []):
-        if isinstance(ov, dict) and ov.get("style") == "SHORTS":
-            return True
-
-    # title に #shorts があれば Shorts
-    title_field = item.get("title") or {}
-    title_text = (title_field.get("text", "") if isinstance(title_field, dict) else str(title_field)).lower()
-    if "#shorts" in title_text:
-        return True
-
-    # duration が 90秒以下なら Shorts の可能性
-    dur = item.get("duration")
-    if dur:
-        dur_text = dur.get("text") or dur.get("simpleText", "") if isinstance(dur, dict) else str(dur)
-        secs = convert_timestamp_to_seconds(dur_text)
-        if 0 < secs <= 90:
-            return True
-
-    # video_id が存在して、他の条件がなくても一応対象（オリジナルのままにしつつ寛容に）
-    video_id = item.get("id") or item.get("videoId") or item.get("video_id")
-    if video_id:
-        # ただしタイプが明らかに異なる場合は除外
-        item_type = item.get("type", "").lower()
-        if "channel" not in item_type and "playlist" not in item_type:
-            return True
-
-    return False
-
-
-def transform_mirror_item(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """ミラーノードのレスポンスアイテムを標準フォーマットに変換"""
-    if not isinstance(item, dict):
-        return None
-
-    item_type = item.get("type", "")
-
-    # === ShortsLockupView の処理 ===
-    if item_type == "ShortsLockupView":
-        on_tap = item.get("on_tap_endpoint") or {}
-        on_tap_payload = (on_tap.get("payload") or {}) if isinstance(on_tap, dict) else {}
-        shorts_video_id = on_tap_payload.get("videoId") if isinstance(on_tap_payload, dict) else None
-
-        if not shorts_video_id:
-            return None
-
-        overlay = item.get("overlay_metadata") or {}
-        title = ""
-        if isinstance(overlay, dict):
-            primary = overlay.get("primary_text") or {}
-            title = primary.get("text", "") if isinstance(primary, dict) else ""
-
-        if not title:
-            acc = item.get("accessibility_text") or ""
-            title = acc.split(",")[0] if acc else shorts_video_id
-
-        sec_text = overlay.get("secondary_text") or {} if isinstance(overlay, dict) else {}
-        raw_views = sec_text.get("text", "") if isinstance(sec_text, dict) else ""
-        view_count = extract_view_number(raw_views)
-
-        # サムネイル取得
-        thumb_url = None
-        thumbnail = item.get("thumbnail") or {}
-        if isinstance(thumbnail, dict):
-            sources = thumbnail.get("sources") or []
-            if sources and isinstance(sources, list):
-                thumb_url = sources[0].get("url") if isinstance(sources[0], dict) else None
-
-        if not thumb_url:
-            thumb_url = f"https://i.ytimg.com/vi/{shorts_video_id}/mqdefault.jpg"
-
-        return format_short_payload(
-            video_id=shorts_video_id,
-            title=title,
-            length_seconds=60,
-            view_count=view_count,
-            view_count_text=raw_views,
-            thumbnail_url=thumb_url,
-        )
-
-    # === on_tap_endpoint で videoId がある場合 ===
-    on_tap = item.get("on_tap_endpoint") or {}
-    on_tap_payload = (on_tap.get("payload") or {}) if isinstance(on_tap, dict) else {}
-    shorts_video_id = on_tap_payload.get("videoId") if isinstance(on_tap_payload, dict) else None
-
-    if shorts_video_id:
-        overlay = item.get("overlay_metadata") or {}
-        title = ""
-        if isinstance(overlay, dict):
-            primary = overlay.get("primary_text") or {}
-            title = primary.get("text", "") if isinstance(primary, dict) else ""
-
-        if not title:
-            acc = item.get("accessibility_text") or ""
-            title = acc.split(",")[0] if acc else shorts_video_id
-
-        sec_text = overlay.get("secondary_text") or {} if isinstance(overlay, dict) else {}
-        raw_views = sec_text.get("text", "") if isinstance(sec_text, dict) else ""
-        view_count = extract_view_number(raw_views)
-
-        # サムネイル取得
-        thumb_url = None
-        thumbnail = item.get("thumbnail") or {}
-        if isinstance(thumbnail, dict):
-            sources = thumbnail.get("sources") or []
-            if sources and isinstance(sources, list):
-                thumb_url = sources[0].get("url") if isinstance(sources[0], dict) else None
-
-        if not thumb_url:
-            thumb_url = f"https://i.ytimg.com/vi/{shorts_video_id}/mqdefault.jpg"
-
-        return format_short_payload(
-            video_id=shorts_video_id,
-            title=title,
-            length_seconds=60,
-            view_count=view_count,
-            view_count_text=raw_views,
-            thumbnail_url=thumb_url,
-        )
-
-    # === 通常の動画アイテムの処理 ===
-    video_id = item.get("id") or item.get("videoId") or item.get("video_id")
-    if not video_id:
-        return None
-
-    title_field = item.get("title") or {}
-    title = title_field.get("text") or title_field.get("simpleText") or str(title_field) if title_field else ""
-    if not title:
-        title = video_id
-
-    author_field = item.get("author") or item.get("channel") or {}
-    author_name, author_id = "", ""
-    if isinstance(author_field, dict):
-        author_name = author_field.get("name", "")
-        author_id = author_field.get("id", "")
-
-    vc_field = item.get("view_count") or item.get("short_view_count") or {}
-    vc_text = vc_field.get("text", "") if isinstance(vc_field, dict) else str(vc_field) if vc_field else ""
-    view_count = extract_view_number(vc_text)
-
-    pub_field = item.get("published") or {}
-    pub_text = pub_field.get("text", "") if isinstance(pub_field, dict) else str(pub_field) if pub_field else ""
-
-    # サムネイル取得
-    thumb_url = None
-    thumbnails = item.get("thumbnails") or []
-    if thumbnails and isinstance(thumbnails, list):
-        first_thumb = thumbnails[0] if isinstance(thumbnails[0], dict) else {}
-        thumb_url = first_thumb.get("url")
-
-    if not thumb_url:
-        thumb_url = f"https://i.ytimg.com/vi/{video_id}/mqdefault.jpg"
-
-    # 動画の長さを取得
-    dur = item.get("duration") or {}
-    dur_secs = 30
-    if isinstance(dur, dict):
-        dur_text = dur.get("text") or dur.get("simpleText", "")
-        dur_secs = convert_timestamp_to_seconds(dur_text) or 30
-    elif isinstance(dur, (int, float)):
-        dur_secs = int(dur)
-    elif dur:
-        dur_secs = convert_timestamp_to_seconds(str(dur)) or 30
-
-    return format_short_payload(
-        video_id=video_id,
-        title=title,
-        author=author_name,
-        author_id=author_id,
-        length_seconds=dur_secs,
-        view_count=view_count,
-        view_count_text=vc_text,
-        thumbnail_url=thumb_url,
-        published_text=pub_text,
-    )
-
-
 @router.get("/v1/shorts/stream")
 async def stream_shorts_feed(q: str = Query(...)):
-    """Shortsストリーミング検索エンドポイント - 複数のミラーノードから並行取得"""
-    query_variants = [q, f"{q} ショート", f"{q} #shorts"]
-
-    async def execute_node_request(client: httpx.AsyncClient, base: str, search_q: str, page: int) -> List[Dict[str, Any]]:
-        """単一のミラーノードへのリクエスト実行"""
+    """Shortsストリーミング検索エンドポイント - SearXNG APIを使用"""
+    
+    async def execute_instance_request(
+        client: httpx.AsyncClient, 
+        instance: str, 
+        search_query: str, 
+        page: int
+    ) -> List[Dict[str, Any]]:
+        """単一のSearXNGインスタンスへのリクエスト実行"""
         try:
             resp = await client.get(
-                f"{base}/api/search",
-                params={"q": search_q, "page": page},
+                f"{instance}search",
+                params={
+                    "q": search_query,
+                    "format": "json",
+                    "categories": "video",
+                    "pageno": page,
+                },
                 timeout=httpx.Timeout(15.0),
             )
             resp.raise_for_status()
             data = resp.json()
-            if not isinstance(data, dict):
-                return []
-
-            candidates = list(data.get("shorts") or [])
             
-            # videos から Shorts 対象のものをフィルタリング
-            for v in (data.get("videos") or []):
-                if check_short_eligibility(v):
-                    candidates.append(v)
+            results = data.get("results", [])
+            shorts = []
             
-            return candidates
+            for result in results:
+                short = process_searxng_result(result)
+                if short:
+                    shorts.append(short)
+            
+            return shorts
         except Exception:
             return []
 
     async def generate_event_stream():
         """イベントストリーム生成"""
         seen: set[str] = set()
+        query_variants = [f"{q} shorts", f"{q} ショート"]
         
         async with httpx.AsyncClient() as client:
-            # 全ミラーノード・クエリバリアント・ページを並行実行
+            # 複数インスタンス、複数クエリ、複数ページを並行実行
             coros = [
-                execute_node_request(client, base, search_q, page)
-                for base in MIRROR_NODES
-                for search_q in query_variants
+                execute_instance_request(client, instance, search_query, page)
+                for instance in SEARXNG_INSTANCES
+                for search_query in query_variants
                 for page in range(1, 4)
             ]
             tasks = [asyncio.ensure_future(c) for c in coros]
@@ -437,11 +290,10 @@ async def stream_shorts_feed(q: str = Query(...)):
                 batch = await fut
                 new_items = []
                 
-                for raw in batch:
-                    normalized = transform_mirror_item(raw)
-                    if normalized and normalized.get("videoId") not in seen:
-                        seen.add(normalized["videoId"])
-                        new_items.append(normalized)
+                for short in batch:
+                    if short and short.get("videoId") not in seen:
+                        seen.add(short["videoId"])
+                        new_items.append(short)
 
                 # バッチごとにイベント送信
                 if new_items:
