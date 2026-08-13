@@ -239,6 +239,7 @@
         border-radius: 12px;
         overflow: hidden;
         pointer-events: none;
+        animation: fadeInCard 0.4s ease-out forwards;
     }
 
     .skeleton-thumbnail, .skeleton-thumb {
@@ -916,7 +917,7 @@
             $("#filter-panel").slideToggle(200);
         });
 
-        // メインコンテンツの垂直無限スクロール
+        // メインコンテンツの垂直無限スクロール - window scroll イベント
         $(window).on('scroll', function () {
             if (isLoading || !hasMore) return;
 
@@ -924,6 +925,7 @@
             const windowHeight = $(window).height();
             const documentHeight = $(document).height();
 
+            // ページ下部500px手前で読み込み開始
             if (scrollTop + windowHeight >= documentHeight - 500) {
                 loadNextPage();
             }
@@ -945,38 +947,42 @@
             }
         });
 
-        // Intersection Observer を使用した追加の無限スクロール検出
+        // Intersection Observer を使用した追加の無限スクロール検出（ビデオグリッド用）
         if ('IntersectionObserver' in window) {
             const loaderElement = document.getElementById('infinite-loader');
             if (loaderElement) {
                 const observer = new IntersectionObserver(
                     (entries) => {
-                        if (entries[0].isIntersecting && !isLoading && hasMore) {
-                            loadNextPage();
-                        }
+                        entries.forEach((entry) => {
+                            if (entry.isIntersecting && !isLoading && hasMore) {
+                                loadNextPage();
+                            }
+                        });
                     },
-                    { threshold: 0.1, rootMargin: '200px' }
+                    { threshold: 0.1, rootMargin: '300px 0px' }
                 );
                 observer.observe(loaderElement);
             }
 
             // Shorts コンテナの右端検出用 Sentinel
-            const sentinelHtml = '<div class="sentinel-shorts" style="flex: 0 0 40px; height: 100%; background: transparent;"></div>';
             const shortsContainer = $('#home-shorts-container');
             if (shortsContainer.length) {
+                const sentinelHtml = document.createElement('div');
+                sentinelHtml.className = 'sentinel-shorts';
+                sentinelHtml.style.cssText = 'flex: 0 0 40px; height: 100%; background: transparent;';
                 shortsContainer.append(sentinelHtml);
-                const sentinel = document.querySelector('.sentinel-shorts');
-                if (sentinel) {
-                    const shortsObserver = new IntersectionObserver(
-                        (entries) => {
-                            if (entries[0].isIntersecting && !isCseFetching) {
+                
+                const shortsObserver = new IntersectionObserver(
+                    (entries) => {
+                        entries.forEach((entry) => {
+                            if (entry.isIntersecting && !isCseFetching) {
                                 triggerCseShortsSearch(currentSearchQuery ? currentSearchQuery : "人気 #shorts", true);
                             }
-                        },
-                        { threshold: 0.5, root: shortsContainer[0] }
-                    );
-                    shortsObserver.observe(sentinel);
-                }
+                        });
+                    },
+                    { threshold: 0.5, root: shortsContainer[0], rootMargin: '100px' }
+                );
+                shortsObserver.observe(sentinelHtml);
             }
         }
     });
@@ -1004,7 +1010,8 @@
                 </div>
             </div>
         `;
-        for(let i = 0; i < 4; i++) {
+        // 3カラムレイアウト時に適切な数のスケルトンを表示
+        for(let i = 0; i < 6; i++) {
             $('#results-container').append(skeletonHtml);
         }
 
@@ -1019,6 +1026,7 @@
             type: 'GET',
             dataType: 'html',
             success: function (response) {
+                // スケルトンカードをすべて削除
                 $('#results-container').find('.temp-main-skeleton').remove();
                 
                 const $parsed = $($.parseHTML(response, document, true));
@@ -1031,11 +1039,14 @@
                 if (newItems && $.trim(newItems).length > 0) {
                     $('#results-container').append(newItems);
                     currentPage = nextPage;
+                    showNotify("新しい動画を読み込みました", false);
                 } else {
                     hasMore = false;
+                    showNotify("すべての動画を読み込みました", false);
                 }
             },
             error: function () {
+                // スケルトンカードをすべて削除
                 $('#results-container').find('.temp-main-skeleton').remove();
                 hasMore = false;
                 showNotify("追加データの読み込みに失敗しました。", true);
@@ -1058,8 +1069,8 @@
             alertIcon.innerText = "warning";
             alertIcon.style.color = "var(--yt-brand-red)";
         } else {
-            alertIcon.innerText = "info";
-            alertIcon.style.color = "var(--yt-text-primary)";
+            alertIcon.innerText = "check_circle";
+            alertIcon.style.color = "#4CAF50";
         }
 
         $(alertBox).stop(true, true).fadeIn(300).delay(3000).fadeOut(500);
