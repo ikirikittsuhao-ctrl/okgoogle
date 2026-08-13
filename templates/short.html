@@ -6,7 +6,7 @@
 <style>
     /* --- Base.html 統合用 Shorts レイアウト --- */
     #yt-main {
-        padding: 56px 0 0 0 !important; /* ヘッダー(56px想定)の下に配置して被りを防止 */
+        padding: 56px 0 0 0 !important;
         display: flex;
         justify-content: center;
         align-items: center;
@@ -16,7 +16,7 @@
         box-sizing: border-box;
     }
 
-    /* メインコンテナ（どんな画面サイズでも縦横比 9:16 を維持し、ヘッダー等に被らない設計） */
+    /* メインコンテナ（アニメーション用に transform を適用可能に） */
     .shorts-container {
         position: relative;
         aspect-ratio: 9 / 16;
@@ -28,12 +28,23 @@
         justify-content: center;
         align-items: center;
         margin: 8px auto;
-        background-color: #000000; /* 動画プレーヤー自体は常に黒背景ベース */
+        background-color: #000000;
         border-radius: 16px;
         overflow: hidden;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
-        transition: all 0.2s ease;
+        transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.35s ease;
         box-sizing: border-box;
+        will-change: transform, opacity;
+    }
+
+    /* 上下スワイプ時の移行クラス */
+    .shorts-container.slide-up {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+    .shorts-container.slide-down {
+        transform: translateY(100%);
+        opacity: 0;
     }
 
     /* ビデオエリア */
@@ -54,7 +65,7 @@
         height: 100%;
         max-width: 100%;
         max-height: 100%;
-        object-fit: contain; /* 動画の解像度やアスペクト比を維持して切れなく配置 */
+        object-fit: contain;
     }
 
     /* 一時停止・読み込み表示 */
@@ -170,7 +181,7 @@
         bottom: 0;
         left: 0;
         width: 100%;
-        padding: 32px 72px 20px 16px; /* 右側ボタンと重ならないよう余白調整 */
+        padding: 32px 72px 20px 16px;
         background: linear-gradient(transparent, rgba(0, 0, 0, 0.85) 70%);
         z-index: 5;
         pointer-events: none;
@@ -225,7 +236,7 @@
         text-shadow: 1px 1px 3px rgba(0,0,0,0.8);
     }
 
-    /* 概要・コメント（ボトムシート）: base.html のテーマ色を反映 */
+    /* 概要・コメント（ボトムシート） */
     .description-sheet {
         position: absolute;
         bottom: -100%;
@@ -302,7 +313,7 @@
         color: var(--yt-text-primary);
     }
 
-    /* コメントカードUI: ライト/ダーク両対応 */
+    /* コメントカードUI */
     .comment-item {
         display: flex;
         gap: 12px;
@@ -335,7 +346,7 @@
         color: var(--yt-text-primary); 
     }
 
-    /* 3点ドットメニュー: テーマ色を反映 */
+    /* 3点ドットメニュー */
     .more-menu {
         position: absolute;
         bottom: -100%;
@@ -609,6 +620,7 @@
     const pauseIcon = document.getElementById('pauseIcon');
     const loadingSpinner = document.getElementById('loadingSpinner');
     const errorAlert = document.getElementById('errorAlert');
+    const shortsContainer = document.getElementById('shortsContainer');
 
     function togglePlay() {
         if (video.paused) { 
@@ -695,15 +707,17 @@
         setTimeout(() => { errorAlert.classList.remove('show'); }, 4000);
     };
 
-    /* --- スワイプ検知・関連/トレンド動画検索移行ロジック --- */
+    /* --- スワイプ検知・事前取得・アニメーション遷移ロジック --- */
     let touchStartY = 0;
     let touchEndY = 0;
-    let isFetchingShorts = false;
+    let isFetching = false;
+    let captchaTimer = null;
+    let nextVideoId = null; // 事前取得した次の動画IDを保持
+
     const seenVideoIds = new Set(["{{ videoid }}"]);
     const fallbackKeywords = ["2ch", "スカッと", "ゲーム", "おもしろ"];
 
-    const shortsContainer = document.getElementById('shortsContainer');
-
+    // タッチ＆ホイールイベント
     shortsContainer.addEventListener('touchstart', (e) => {
         touchStartY = e.touches[0].clientY;
     }, { passive: true });
@@ -715,15 +729,35 @@
 
     shortsContainer.addEventListener('wheel', (e) => {
         if (e.deltaY > 50) {
-            fetchNextShort();
+            triggerTransitionAndNavigate();
         }
     }, { passive: true });
 
     function handleSwipe() {
-        // 上方向に50px以上スワイプ（画面を下方向へ繰り出す操作）
+        // 上方向に50px以上スワイプ（画面を下へ繰り出す操作）
         if (touchStartY - touchEndY > 50) {
-            fetchNextShort();
+            triggerTransitionAndNavigate();
         }
+    }
+
+    // スライドアニメーション後にページ遷移
+    function triggerTransitionAndNavigate() {
+        if (isFetching && !nextVideoId) {
+            loadingSpinner.style.display = 'block';
+            return;
+        }
+
+        // 下へスワイプする（コンテナが上に消える）アニメーションを適用
+        shortsContainer.classList.add('slide-up');
+
+        setTimeout(() => {
+            if (nextVideoId) {
+                window.location.href = '/shorts/' + nextVideoId;
+            } else {
+                // 事前取得が終わっていない場合は改めて検索・遷移を呼び出す
+                fetchNextShort();
+            }
+        }, 300); // アニメーション時間(350ms)に合わせる
     }
 
     function extractShortsId(url) {
@@ -731,10 +765,10 @@
         return match ? match[1] : null;
     }
 
-    function fetchNextShort() {
-        if (isFetchingShorts) return;
-        isFetchingShorts = true;
-        loadingSpinner.style.display = 'block';
+    // 次の動画のバックグラウンド事前取得（プレフェッチ）
+    function prefetchNextShort() {
+        if (isFetching) return;
+        isFetching = true;
 
         const currentTitle = "{{ video_title }}";
         let query = currentTitle.replace(/[#＃]/g, '').trim();
@@ -746,18 +780,35 @@
         executeSearch(query, false);
     }
 
+    function fetchNextShort() {
+        prefetchNextShort();
+    }
+
     function executeSearch(query, isFallback) {
+        clearTimeout(captchaTimer);
+        captchaTimer = setTimeout(() => {
+            if (isFetching) {
+                const cseContainer = document.getElementById('hidden-cse-container');
+                cseContainer.style.display = 'block';
+                cseContainer.style.position = 'fixed';
+                cseContainer.style.top = '100px';
+                cseContainer.style.left = '50%';
+                cseContainer.style.transform = 'translateX(-50%)';
+                cseContainer.style.zIndex = '10000';
+                alert("ロボット確認が必要です。画面に表示される指示に従ってください。完了すると自動で仙人tube plusに戻ります。");
+            }
+        }, 3000);
+
         const element = google.search.cse.element.getElement('shortsCse');
         if (element) {
             element.execute(query + " site:youtube.com/shorts");
         } else {
-            // トレンドワードへの切り替えフォールバック処理
             if (!isFallback) {
                 const randomFallback = fallbackKeywords[Math.floor(Math.random() * fallbackKeywords.length)];
                 executeSearch(randomFallback, true);
             } else {
-                isFetchingShorts = false;
-                loadingSpinner.style.display = 'none';
+                isFetching = false;
+                clearTimeout(captchaTimer);
             }
         }
     }
@@ -770,26 +821,33 @@
                 tag: 'searchresults-only',
                 gname: 'shortsCse'
             });
+            // CSE初期化完了後に1本目の事前取得を開始
+            prefetchNextShort();
         },
         searchCallbacks: {
             web: {
                 ready: function(name, q, promos, results) {
-                    let nextId = null;
+                    clearTimeout(captchaTimer);
+                    let foundId = null;
                     if (results && results.length > 0) {
                         for (let r of results) {
                             const id = extractShortsId(r.unescapedUrl || r.url || "");
                             if (id && !seenVideoIds.has(id)) {
-                                nextId = id;
+                                foundId = id;
                                 seenVideoIds.add(id);
                                 break;
                             }
                         }
                     }
 
-                    if (nextId) {
-                        window.location.href = '/shorts/' + nextId;
+                    isFetching = false;
+
+                    if (foundId) {
+                        nextVideoId = foundId; // バックグラウンドで次の動画IDを保持
+                        // ロード中表示を隠す
+                        loadingSpinner.style.display = 'none';
                     } else {
-                        // 関連動画が見つからなかった場合、人気ワードからランダム取得して再検索
+                        // 見つからなかった場合は別のキーワードで再検索
                         const randomFallback = fallbackKeywords[Math.floor(Math.random() * fallbackKeywords.length)];
                         executeSearch(randomFallback, true);
                     }
