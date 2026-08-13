@@ -92,10 +92,10 @@
         font-weight: 700;
     }
 
-    /* レスポンシブグリッドレイアウト */
+    /* レスポンシブグリッドレイアウト（どんな画面サイズでも何があっても横並び3つ固定） */
     .video-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        grid-template-columns: repeat(3, 1fr) !important;
         gap: 20px 16px;
         width: 100%;
     }
@@ -314,7 +314,7 @@
         margin-bottom: 32px;
     }
 
-    /* ホーム画面上部のShorts横スクロールセクション（どんな画面サイズでも横並び最大3つ） */
+    /* ホーム画面上部のShorts横スクロールセクション */
     .home-shorts-section {
         margin-bottom: 32px;
         border-bottom: 1px solid var(--yt-border-color);
@@ -338,12 +338,12 @@
         border-radius: 3px;
     }
 
-    /* どんな画面サイズでも画面幅に対して3つ以内の表示サイズに固定 (gap: 16pxが2つで32px分を引いて3等分) */
+    /* Shortsカードを適度な小ささのサイズに調整 (一画面に5〜6個程度収まる幅160px〜180px程度) */
     .home-shorts-container .video-card.is-short,
     .home-shorts-container .skeleton-card {
-        flex: 0 0 calc((100% - 32px) / 3);
-        width: calc((100% - 32px) / 3);
-        max-width: calc((100% - 32px) / 3);
+        flex: 0 0 170px;
+        width: 170px;
+        max-width: 170px;
         box-sizing: border-box;
     }
 
@@ -555,7 +555,7 @@
     /* モバイル・画面幅縮小時の調整 */
     @media (max-width: 600px) {
         .video-grid {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(3, 1fr) !important;
             gap: 16px;
         }
 
