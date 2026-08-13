@@ -946,7 +946,6 @@
     }
 
     function loadNextPage() {
-        if (isLoading || !hasMore) return;
         isLoading = true;
         $("#infinite-loader").css("display", "flex");
 
@@ -969,8 +968,8 @@
         }
 
         const nextPage = currentPage + 1;
-        const query = encodeURIComponent("{{ query }}");
-        const type = "{{ type }}";
+        const query = encodeURIComponent("{{ query|default('') }}");
+        const type = "{{ type|default('') }}";
 
         const url = `/search?q=${query}&type=${type}&page=${nextPage}`;
 
@@ -980,8 +979,14 @@
             dataType: 'html',
             success: function (response) {
                 $('#results-container').find('.temp-main-skeleton').remove();
-                const newItems = $(response).find('#results-container').html();
                 
+                const $parsed = $($.parseHTML(response, document, true));
+                let newItems = $parsed.find('#results-container').html();
+                
+                if (!newItems || $.trim(newItems).length === 0) {
+                    newItems = $parsed.filter('#results-container').html();
+                }
+
                 if (newItems && $.trim(newItems).length > 0) {
                     $('#results-container').append(newItems);
                     currentPage = nextPage;
