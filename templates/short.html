@@ -11,19 +11,23 @@
         justify-content: center;
         align-items: center;
         min-height: calc(100vh - 56px);
+        min-height: calc(100dvh - 56px);
         background-color: var(--yt-bg);
         overflow: hidden;
         box-sizing: border-box;
     }
 
-    /* メインコンテナ（アニメーション用に transform を適用可能に） */
+    /* メインコンテナ（9:16 アスペクト比維持） */
     .shorts-container {
         position: relative;
         aspect-ratio: 9 / 16;
         height: calc(100vh - 72px);
+        height: calc(100dvh - 72px);
         max-height: calc(100vh - 72px);
+        max-height: calc(100dvh - 72px);
         width: auto;
         max-width: calc((100vh - 72px) * 9 / 16);
+        max-width: calc((100dvh - 72px) * 9 / 16);
         display: flex;
         justify-content: center;
         align-items: center;
@@ -435,17 +439,21 @@
         backdrop-filter: blur(2px);
     }
 
-    /* --- レスポンシブ調整 --- */
+    /* --- レスポンシブ調整（スマホ上の無駄な余白を削除し、9:16比率と表示エリアを保持） --- */
     @media (max-width: 792px) {
         #yt-main {
-            padding-top: 56px !important;
+            padding-top: 0 !important; /* スマホ時の上部不要な溝（余白）を削除 */
+            min-height: 100vh;
+            min-height: 100dvh;
         }
         .shorts-container {
             aspect-ratio: 9 / 16;
-            height: calc(100vh - 56px);
-            max-height: calc(100vh - 56px);
+            height: 100vh;
+            height: 100dvh;
+            max-height: 100vh;
+            max-height: 100dvh;
             width: auto;
-            max-width: calc((100vh - 56px) * 9 / 16);
+            max-width: calc(100dvh * 9 / 16);
             margin: 0 auto;
             border-radius: 0;
         }
@@ -455,16 +463,20 @@
     }
 
     @media (max-width: 480px) {
+        #yt-main {
+            padding-top: 0 !important; /* 上部の溝を完全にカット */
+        }
         .shorts-container {
             aspect-ratio: 9 / 16;
             width: 100vw;
             height: calc(100vw * 16 / 9);
-            max-height: calc(100vh - 56px);
-            max-width: calc((100vh - 56px) * 9 / 16);
+            max-height: 100vh;
+            max-height: 100dvh;
+            max-width: calc(100dvh * 9 / 16);
         }
         .side-buttons {
-            right: 8px;
-            bottom: 70px;
+            right: 10px;
+            bottom: 65px; /* 要素が隠れないように調整 */
             gap: 12px;
         }
         .icon-circle {
@@ -476,7 +488,7 @@
             font-size: 10px;
         }
         .bottom-info {
-            padding: 24px 60px 16px 12px;
+            padding: 24px 60px 16px 12px; /* 画面端やボタンと被らない安全幅を配置 */
         }
         .author-name {
             font-size: 13px;
@@ -707,15 +719,32 @@
         setTimeout(() => { errorAlert.classList.remove('show'); }, 4000);
     };
 
-    /* --- スワイプ検知・事前取得・アニメーション遷移ロジック --- */
+    /* --- スワイプ検知・事前取得・重複防止・アニメーション遷移ロジック --- */
     let touchStartY = 0;
     let touchEndY = 0;
     let isFetching = false;
     let captchaTimer = null;
     let nextVideoId = null; // 事前取得した次の動画IDを保持
 
-    const seenVideoIds = new Set(["{{ videoid }}"]);
-    const fallbackKeywords = ["2ch", "スカッと", "ゲーム", "おもしろ"];
+    // 閲覧済み・現在表示中のIDリスト（ローカルストレージやSetで管理して重複排除）
+    const currentVideoId = "{{ videoid }}";
+    const seenVideoIds = new Set();
+    
+    // セッションストレージ等から既読リストを復元（重複再生対策）
+    try {
+        const storedSeen = JSON.parse(sessionStorage.getItem('seenShortsIds') || '[]');
+        storedSeen.forEach(id => seenVideoIds.add(id));
+    } catch(e) {}
+    seenVideoIds.add(currentVideoId);
+
+    function markVideoAsSeen(id) {
+        seenVideoIds.add(id);
+        try {
+            sessionStorage.setItem('seenShortsIds', JSON.stringify(Array.from(seenVideoIds)));
+        } catch(e) {}
+    }
+
+    const fallbackKeywords = ["2ch", "スカッと", "ゲーム", "おもしろ", "Vlog", "アニメ", "動物"];
 
     // タッチ＆ホイールイベント
     shortsContainer.addEventListener('touchstart', (e) => {
@@ -734,7 +763,7 @@
     }, { passive: true });
 
     function handleSwipe() {
-        // 上方向に50px以上スワイプ（画面を下へ繰り出す操作）
+        // 上方向に50px以上スワイプ（下へスクロールする動作）
         if (touchStartY - touchEndY > 50) {
             triggerTransitionAndNavigate();
         }
@@ -752,12 +781,13 @@
 
         setTimeout(() => {
             if (nextVideoId) {
+                markVideoAsSeen(nextVideoId);
                 window.location.href = '/shorts/' + nextVideoId;
             } else {
-                // 事前取得が終わっていない場合は改めて検索・遷移を呼び出す
+                // 事前取得が終わっていない場合は改めて検索・遷移を実施
                 fetchNextShort();
             }
-        }, 300); // アニメーション時間(350ms)に合わせる
+        }, 300); // アニメーション時間に合わせる
     }
 
     function extractShortsId(url) {
@@ -829,25 +859,24 @@
                 ready: function(name, q, promos, results) {
                     clearTimeout(captchaTimer);
                     let foundId = null;
+
                     if (results && results.length > 0) {
                         for (let r of results) {
                             const id = extractShortsId(r.unescapedUrl || r.url || "");
-                            if (id && !seenVideoIds.has(id)) {
+                            // 現在の動画および既読IDリストに含まれていない場合のみ次動画として設定
+                            if (id && id !== currentVideoId && !seenVideoIds.has(id)) {
                                 foundId = id;
-                                seenVideoIds.add(id);
                                 break;
                             }
                         }
                     }
 
-                    isFetching = false;
-
                     if (foundId) {
+                        isFetching = false;
                         nextVideoId = foundId; // バックグラウンドで次の動画IDを保持
-                        // ロード中表示を隠す
                         loadingSpinner.style.display = 'none';
                     } else {
-                        // 見つからなかった場合は別のキーワードで再検索
+                        // 見つからないか全て重複していた場合、ランダムキーワードで再探索
                         const randomFallback = fallbackKeywords[Math.floor(Math.random() * fallbackKeywords.length)];
                         executeSearch(randomFallback, true);
                     }
