@@ -326,7 +326,8 @@
         display: flex;
         gap: 16px;
         overflow-x: auto;
-        padding-bottom: 12px;
+        padding: 0 0 12px 0; /* 左端からカードが綺麗に並ぶようパディング調整 */
+        margin: 0;
         scrollbar-width: thin;
         scroll-behavior: smooth;
     }
@@ -788,22 +789,44 @@
     let hasMore = true;
     let isCseFetching = false;
     let captchaTimer = null;
+    let isCseInitialized = false;
     const seenVideoIds = new Set();
     const currentSearchQuery = "{{ query|default('') }}";
+
+    // CSEレンダリングおよび検索を安全にトリガーする初期化補助関数
+    function ensureCseRenderAndSearch(append = false) {
+        if (!window.google || !window.google.search || !window.google.search.cse || !window.google.search.cse.element) {
+            return false;
+        }
+
+        if (!isCseInitialized) {
+            try {
+                google.search.cse.element.render({
+                    div: "hidden-cse-container",
+                    tag: 'searchresults-only',
+                    gname: 'shortsCse'
+                });
+                isCseInitialized = true;
+            } catch (e) {
+                console.error("CSE Render failed:", e);
+            }
+        }
+
+        if ($("#home-shorts-container").length > 0) {
+            const currentCards = $("#home-shorts-container").find('.video-card.is-short').length;
+            if (currentCards === 0 || append) {
+                triggerCseShortsSearch(currentSearchQuery ? currentSearchQuery : "人気 #shorts", append);
+                return true;
+            }
+        }
+        return false;
+    }
 
     // Google カスタム検索エンジンの初期化設定
     window.__gcse = {
         parsetags: 'explicit',
         initializationCallback: function() {
-            google.search.cse.element.render({
-                div: "hidden-cse-container",
-                tag: 'searchresults-only',
-                gname: 'shortsCse'
-            });
-            // ページ読み込み後にホーム画面またはShorts検索時のデータ取得
-            if ($("#home-shorts-container").length > 0 && $("#home-shorts-container").find('.video-card.is-short').length === 0) {
-                triggerCseShortsSearch(currentSearchQuery ? currentSearchQuery : "人気 #shorts");
-            }
+            ensureCseRenderAndSearch(false);
         },
         searchCallbacks: {
             web: {
@@ -861,23 +884,29 @@
         captchaTimer = setTimeout(() => {
             if (isCseFetching) {
                 const cseContainer = document.getElementById('hidden-cse-container');
-                cseContainer.style.display = 'block';
-                cseContainer.style.position = 'fixed';
-                cseContainer.style.top = '100px';
-                cseContainer.style.left = '50%';
-                cseContainer.style.transform = 'translateX(-50%)';
-                cseContainer.style.zIndex = '10000';
+                if (cseContainer) {
+                    cseContainer.style.display = 'block';
+                    cseContainer.style.position = 'fixed';
+                    cseContainer.style.top = '100px';
+                    cseContainer.style.left = '50%';
+                    cseContainer.style.transform = 'translateX(-50%)';
+                    cseContainer.style.zIndex = '10000';
+                }
                 alert("ロボット確認が必要です。画面に表示される指示に従ってください。完了すると自動で画面に戻ります。");
             }
         }, 3000);
 
-        const element = google.search.cse.element.getElement('shortsCse');
+        if (window.google && window.google.search && window.google.search.cse && window.google.search.cse.element) {
+            const element = google.search.cse.element.getElement('shortsCse');
+            // 追加読み込み時はランダムな装飾キーワードを付けて検索リクエストを変化させる
+            const decor = append ? ["", " viral", " trend", " popular", " short", " new"][Math.floor(Math.random() * 6)] : "";
 
-        // 追加読み込み時はランダムな装飾キーワードを付けて検索リクエストを変化させる
-        const decor = append ? ["", " viral", " trend", " popular", " short", " new"][Math.floor(Math.random() * 6)] : "";
-
-        if (element) {
-            element.execute(query + decor + " site:youtube.com/shorts");
+            if (element) {
+                element.execute(query + decor + " site:youtube.com/shorts");
+            } else {
+                isCseFetching = false;
+                $('#home-shorts-container').find('.temp-skeleton').remove();
+            }
         } else {
             isCseFetching = false;
             $('#home-shorts-container').find('.temp-skeleton').remove();
@@ -916,6 +945,13 @@
         $("#filter-toggle-btn").click(function () {
             $("#filter-panel").slideToggle(200);
         });
+
+        // DOM準備完了時にCSEのロード状態を確認して即時呼び出しをフォールバック実行
+        setTimeout(function() {
+            if ($("#home-shorts-container").length > 0 && $("#home-shorts-container").find('.video-card.is-short').length === 0) {
+                ensureCseRenderAndSearch(false);
+            }
+        }, 500);
 
         // メインコンテンツの垂直無限スクロール - window scroll イベント
         $(window).on('scroll', function () {
