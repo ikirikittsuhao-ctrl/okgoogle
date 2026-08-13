@@ -886,8 +886,13 @@
     function renderCseShortsResults(videos) {
         const container = $('#home-shorts-container');
         
-        // 初回描写時および追加読み込み時のスケルトンカードを消去
-        container.find('.skeleton-card').remove();
+        // 初回描写時のスケルトンカードを消去（追加読み込み時の temp-skeleton は自動削除）
+        if (!container.find('.temp-skeleton').length) {
+            container.find('.skeleton-card').remove();
+        }
+        
+        // 追加読み込み時の一時スケルトンを削除
+        container.find('.temp-skeleton').remove();
 
         videos.forEach(v => {
             const html = `
@@ -919,25 +924,61 @@
             const windowHeight = $(window).height();
             const documentHeight = $(document).height();
 
-            if (scrollTop + windowHeight >= documentHeight - 300) {
+            if (scrollTop + windowHeight >= documentHeight - 500) {
                 loadNextPage();
             }
         });
 
-        // 横スライドShortsセクションの水平無限スクロール
+        // 横スライドShortsセクションの水平無限スクロール - 複数の検出方法
         $('#home-shorts-container').on('scroll', function () {
             const container = $(this);
             const scrollLeft = container.scrollLeft();
             const innerWidth = container.innerWidth();
             const scrollWidth = container[0].scrollWidth;
+            const scrollPercentage = (scrollLeft + innerWidth) / scrollWidth;
 
-            // 右端の近く（残り200px以内）に達したら自動で追加読み込み実行
-            if (scrollLeft + innerWidth >= scrollWidth - 200) {
+            // 右端の近く（残り200px以内 または 90%スクロール）に達したら自動で追加読み込み実行
+            if (scrollLeft + innerWidth >= scrollWidth - 200 || scrollPercentage >= 0.9) {
                 if (!isCseFetching) {
                     triggerCseShortsSearch(currentSearchQuery ? currentSearchQuery : "人気 #shorts", true);
                 }
             }
         });
+
+        // Intersection Observer を使用した追加の無限スクロール検出
+        if ('IntersectionObserver' in window) {
+            const loaderElement = document.getElementById('infinite-loader');
+            if (loaderElement) {
+                const observer = new IntersectionObserver(
+                    (entries) => {
+                        if (entries[0].isIntersecting && !isLoading && hasMore) {
+                            loadNextPage();
+                        }
+                    },
+                    { threshold: 0.1, rootMargin: '200px' }
+                );
+                observer.observe(loaderElement);
+            }
+
+            // Shorts コンテナの右端検出用 Sentinel
+            const sentinelHtml = '<div class="sentinel-shorts" style="flex: 0 0 40px; height: 100%; background: transparent;"></div>';
+            const shortsContainer = $('#home-shorts-container');
+            if (shortsContainer.length) {
+                shortsContainer.append(sentinelHtml);
+                const sentinel = document.querySelector('.sentinel-shorts');
+                if (sentinel) {
+                    const shortsObserver = new IntersectionObserver(
+                        (entries) => {
+                            if (entries[0].isIntersecting && !isCseFetching) {
+                                triggerCseShortsSearch(currentSearchQuery ? currentSearchQuery : "人気 #shorts", true);
+                            }
+                        },
+                        { threshold: 0.5, root: shortsContainer[0] }
+                    );
+                    shortsObserver.observe(sentinel);
+                }
+            }
+        }
     });
 
     function applyFilter(filterType) {
