@@ -439,10 +439,10 @@
         backdrop-filter: blur(2px);
     }
 
-    /* --- レスポンシブ調整（スマホ上の無駄な余白を削除し、9:16比率と表示エリアを保持） --- */
+    /* --- レスポンシブ調整 --- */
     @media (max-width: 792px) {
         #yt-main {
-            padding-top: 0 !important; /* スマホ時の上部不要な溝（余白）を削除 */
+            padding-top: 0 !important;
             min-height: 100vh;
             min-height: 100dvh;
         }
@@ -464,7 +464,7 @@
 
     @media (max-width: 480px) {
         #yt-main {
-            padding-top: 0 !important; /* 上部の溝を完全にカット */
+            padding-top: 0 !important;
         }
         .shorts-container {
             aspect-ratio: 9 / 16;
@@ -476,7 +476,7 @@
         }
         .side-buttons {
             right: 10px;
-            bottom: 65px; /* 要素が隠れないように調整 */
+            bottom: 65px;
             gap: 12px;
         }
         .icon-circle {
@@ -488,7 +488,7 @@
             font-size: 10px;
         }
         .bottom-info {
-            padding: 24px 60px 16px 12px; /* 画面端やボタンと被らない安全幅を配置 */
+            padding: 24px 60px 16px 12px;
         }
         .author-name {
             font-size: 13px;
@@ -724,13 +724,11 @@
     let touchEndY = 0;
     let isFetching = false;
     let captchaTimer = null;
-    let nextVideoId = null; // 事前取得した次の動画IDを保持
+    let nextVideoId = null;
 
-    // 閲覧済み・現在表示中のIDリスト（ローカルストレージやSetで管理して重複排除）
     const currentVideoId = "{{ videoid }}";
     const seenVideoIds = new Set();
     
-    // セッションストレージ等から既読リストを復元（重複再生対策）
     try {
         const storedSeen = JSON.parse(sessionStorage.getItem('seenShortsIds') || '[]');
         storedSeen.forEach(id => seenVideoIds.add(id));
@@ -744,9 +742,33 @@
         } catch(e) {}
     }
 
-    const fallbackKeywords = ["2ch", "スカッと", "ゲーム", "おもしろ", "Vlog", "アニメ", "動物"];
+    // デフォルトのフォールバックキーワード
+    const fallbackKeywords = ["スカッと", "ゲーム", "2ch", "おもしろ", "Vlog", "アニメ", "動物"];
 
-    // タッチ＆ホイールイベント
+    // 1. 最初に見ている動画タイトルに関連するワードを優先取得
+    // 2. 失敗（結果なし等）時は「検索履歴」または「フォールバックキーワード」からランダムで選択
+    function getRandomQuery(isFallback = false) {
+        if (!isFallback) {
+            // 最初に見た動画タイトルを使用
+            const currentTitle = "{{ video_title }}";
+            let cleanTitle = currentTitle.replace(/[#＃]/g, '').trim();
+            if (cleanTitle) return cleanTitle;
+        }
+
+        // フォールバック時：検索履歴(yt_search_history)とデフォルトワードを合算
+        let candidates = [...fallbackKeywords];
+        try {
+            const history = JSON.parse(localStorage.getItem('yt_search_history') || '[]');
+            if (history.length > 0) {
+                candidates = candidates.concat(history);
+            }
+        } catch(e) {}
+
+        // 配列の中からランダムで1つ選択
+        const randomIndex = Math.floor(Math.random() * candidates.length);
+        return candidates[randomIndex];
+    }
+
     shortsContainer.addEventListener('touchstart', (e) => {
         touchStartY = e.touches[0].clientY;
     }, { passive: true });
@@ -763,20 +785,17 @@
     }, { passive: true });
 
     function handleSwipe() {
-        // 上方向に50px以上スワイプ（下へスクロールする動作）
         if (touchStartY - touchEndY > 50) {
             triggerTransitionAndNavigate();
         }
     }
 
-    // スライドアニメーション後にページ遷移
     function triggerTransitionAndNavigate() {
         if (isFetching && !nextVideoId) {
             loadingSpinner.style.display = 'block';
             return;
         }
 
-        // 下へスワイプする（コンテナが上に消える）アニメーションを適用
         shortsContainer.classList.add('slide-up');
 
         setTimeout(() => {
@@ -784,10 +803,9 @@
                 markVideoAsSeen(nextVideoId);
                 window.location.href = '/shorts/' + nextVideoId;
             } else {
-                // 事前取得が終わっていない場合は改めて検索・遷移を実施
                 fetchNextShort();
             }
-        }, 300); // アニメーション時間に合わせる
+        }, 300);
     }
 
     function extractShortsId(url) {
@@ -795,18 +813,11 @@
         return match ? match[1] : null;
     }
 
-    // 次の動画のバックグラウンド事前取得（プレフェッチ）
     function prefetchNextShort() {
         if (isFetching) return;
         isFetching = true;
 
-        const currentTitle = "{{ video_title }}";
-        let query = currentTitle.replace(/[#＃]/g, '').trim();
-
-        if (!query) {
-            query = fallbackKeywords[Math.floor(Math.random() * fallbackKeywords.length)];
-        }
-
+        const query = getRandomQuery(false);
         executeSearch(query, false);
     }
 
@@ -834,7 +845,7 @@
             element.execute(query + " site:youtube.com/shorts");
         } else {
             if (!isFallback) {
-                const randomFallback = fallbackKeywords[Math.floor(Math.random() * fallbackKeywords.length)];
+                const randomFallback = getRandomQuery(true);
                 executeSearch(randomFallback, true);
             } else {
                 isFetching = false;
@@ -851,7 +862,6 @@
                 tag: 'searchresults-only',
                 gname: 'shortsCse'
             });
-            // CSE初期化完了後に1本目の事前取得を開始
             prefetchNextShort();
         },
         searchCallbacks: {
@@ -863,7 +873,6 @@
                     if (results && results.length > 0) {
                         for (let r of results) {
                             const id = extractShortsId(r.unescapedUrl || r.url || "");
-                            // 現在の動画および既読IDリストに含まれていない場合のみ次動画として設定
                             if (id && id !== currentVideoId && !seenVideoIds.has(id)) {
                                 foundId = id;
                                 break;
@@ -873,11 +882,11 @@
 
                     if (foundId) {
                         isFetching = false;
-                        nextVideoId = foundId; // バックグラウンドで次の動画IDを保持
+                        nextVideoId = foundId;
                         loadingSpinner.style.display = 'none';
                     } else {
-                        // 見つからないか全て重複していた場合、ランダムキーワードで再探索
-                        const randomFallback = fallbackKeywords[Math.floor(Math.random() * fallbackKeywords.length)];
+                        // 見つからないか重複していた場合、ランダムなフォールバックワードで再試行
+                        const randomFallback = getRandomQuery(true);
                         executeSearch(randomFallback, true);
                     }
                     return true;
