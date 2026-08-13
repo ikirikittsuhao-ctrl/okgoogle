@@ -16,13 +16,14 @@
         box-sizing: border-box;
     }
 
-    /* メインコンテナ（画面サイズに合わせて伸縮） */
+    /* メインコンテナ（どんな画面サイズでも縦横比 9:16 を維持し、ヘッダー等に被らない設計） */
     .shorts-container {
         position: relative;
-        width: 100%;
-        max-width: 450px;
+        aspect-ratio: 9 / 16;
         height: calc(100vh - 72px);
-        max-height: calc(100vh - 80px); /* ヘッダーや画面上下から食い出さない高さ */
+        max-height: calc(100vh - 72px);
+        width: auto;
+        max-width: calc((100vh - 72px) * 9 / 16);
         display: flex;
         justify-content: center;
         align-items: center;
@@ -32,6 +33,7 @@
         overflow: hidden;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
         transition: all 0.2s ease;
+        box-sizing: border-box;
     }
 
     /* ビデオエリア */
@@ -428,10 +430,12 @@
             padding-top: 56px !important;
         }
         .shorts-container {
-            max-width: 100%;
+            aspect-ratio: 9 / 16;
             height: calc(100vh - 56px);
             max-height: calc(100vh - 56px);
-            margin: 0;
+            width: auto;
+            max-width: calc((100vh - 56px) * 9 / 16);
+            margin: 0 auto;
             border-radius: 0;
         }
         .bottom-info {
@@ -440,6 +444,13 @@
     }
 
     @media (max-width: 480px) {
+        .shorts-container {
+            aspect-ratio: 9 / 16;
+            width: 100vw;
+            height: calc(100vw * 16 / 9);
+            max-height: calc(100vh - 56px);
+            max-width: calc((100vh - 56px) * 9 / 16);
+        }
         .side-buttons {
             right: 8px;
             bottom: 70px;
@@ -559,7 +570,15 @@
 
     <div id="menuOverlay" onclick="toggleMoreMenu()"></div>
     <div id="moreMenu" class="more-menu">
-        <div class="menu-item" onclick="copyVideoId('{{ videoid }}')">
+        <div class="menu-item" onclick="changePlayMethod('cookie')">
+            <i class="fas fa-cookie-bite"></i>
+            <span>再生方法: YouTube Cookie</span>
+        </div>
+        <div class="menu-item" onclick="changePlayMethod('stream')">
+            <i class="fas fa-play-circle"></i>
+            <span>再生方法: ストリーム (Stream)</span>
+        </div>
+        <div class="menu-item" onclick="copyVideoId('{{ videoid }}')" style="border-top: 1px solid var(--yt-border-color);">
             <i class="fas fa-fingerprint"></i>
             <span>動画IDをコピー</span>
         </div>
@@ -660,6 +679,13 @@
             alert('動画IDをコピーしました: ' + id);
             toggleMoreMenu();
         });
+    }
+
+    // 再生方法切り替え機能
+    function changePlayMethod(method) {
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set('play_method', method);
+        window.location.href = currentUrl.toString();
     }
 
     video.onerror = function() { 
