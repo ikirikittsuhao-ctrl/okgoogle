@@ -793,7 +793,6 @@
     const seenVideoIds = new Set();
     const currentSearchQuery = "{{ query|default('') }}";
 
-    // CSEレンダリングおよび検索を安全にトリガーする初期化補助関数
     function ensureCseRenderAndSearch(append = false) {
         if (!window.google || !window.google.search || !window.google.search.cse || !window.google.search.cse.element) {
             return false;
@@ -822,7 +821,6 @@
         return false;
     }
 
-    // Google カスタム検索エンジンの初期化設定
     window.__gcse = {
         parsetags: 'explicit',
         initializationCallback: function() {
@@ -831,7 +829,6 @@
         searchCallbacks: {
             web: {
                 ready: function(name, q, promos, results) {
-                    // レスポンス受信時はタイマー解除およびCSEコンテナの非表示設定
                     clearTimeout(captchaTimer);
                     const cseContainer = document.getElementById('hidden-cse-container');
                     if (cseContainer) {
@@ -856,13 +853,11 @@
         }
     };
 
-    // URLからショート動画の11桁IDのみを抽出するロジック
     function extractShortsId(url) {
         const match = url.match(/(?:shorts\/|v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
         return match ? match[1] : null;
     }
 
-    // Shortsの検索実行ロジック (appendフラグで新規検索か追加検索かを判別)
     function triggerCseShortsSearch(query, append = false) {
         if (isCseFetching) return;
         isCseFetching = true;
@@ -870,17 +865,14 @@
         if (!append) {
             seenVideoIds.clear();
         } else {
-            // 追加読み込み時にスクロールエリアへスケルトンアニメーション（カード）を追加
             const container = $('#home-shorts-container');
             for(let i = 0; i < 3; i++) {
                 container.append('<div class="skeleton-card temp-skeleton"><div class="skeleton-thumb"></div><div class="skeleton-text"></div><div class="skeleton-text short"></div></div>');
             }
         }
 
-        // 既存のタイマーがあればクリア
         clearTimeout(captchaTimer);
 
-        // 3秒経過してもレスポンスがなくisCseFetchingがtrueならCAPTCHA（ロボット確認）を表示
         captchaTimer = setTimeout(() => {
             if (isCseFetching) {
                 const cseContainer = document.getElementById('hidden-cse-container');
@@ -898,7 +890,6 @@
 
         if (window.google && window.google.search && window.google.search.cse && window.google.search.cse.element) {
             const element = google.search.cse.element.getElement('shortsCse');
-            // 追加読み込み時はランダムな装飾キーワードを付けて検索リクエストを変化させる
             const decor = append ? ["", " viral", " trend", " popular", " short", " new"][Math.floor(Math.random() * 6)] : "";
 
             if (element) {
@@ -916,12 +907,10 @@
     function renderCseShortsResults(videos) {
         const container = $('#home-shorts-container');
         
-        // 初回描写時のスケルトンカードを消去（追加読み込み時の temp-skeleton は自動削除）
         if (!container.find('.temp-skeleton').length) {
             container.find('.skeleton-card').remove();
         }
         
-        // 追加読み込み時の一時スケルトンを削除
         container.find('.temp-skeleton').remove();
 
         videos.forEach(v => {
@@ -946,14 +935,12 @@
             $("#filter-panel").slideToggle(200);
         });
 
-        // DOM準備完了時にCSEのロード状態を確認して即時呼び出しをフォールバック実行
         setTimeout(function() {
             if ($("#home-shorts-container").length > 0 && $("#home-shorts-container").find('.video-card.is-short').length === 0) {
                 ensureCseRenderAndSearch(false);
             }
         }, 500);
 
-        // メインコンテンツの垂直無限スクロール - window scroll イベント
         $(window).on('scroll', function () {
             if (isLoading || !hasMore) return;
 
@@ -961,13 +948,11 @@
             const windowHeight = $(window).height();
             const documentHeight = $(document).height();
 
-            // ページ下部500px手前で読み込み開始
             if (scrollTop + windowHeight >= documentHeight - 500) {
                 loadNextPage();
             }
         });
 
-        // 横スライドShortsセクションの水平無限スクロール - 複数の検出方法
         $('#home-shorts-container').on('scroll', function () {
             const container = $(this);
             const scrollLeft = container.scrollLeft();
@@ -975,7 +960,6 @@
             const scrollWidth = container[0].scrollWidth;
             const scrollPercentage = (scrollLeft + innerWidth) / scrollWidth;
 
-            // 右端の近く（残り200px以内 または 90%スクロール）に達したら自動で追加読み込み実行
             if (scrollLeft + innerWidth >= scrollWidth - 200 || scrollPercentage >= 0.9) {
                 if (!isCseFetching) {
                     triggerCseShortsSearch(currentSearchQuery ? currentSearchQuery : "人気 #shorts", true);
@@ -983,7 +967,6 @@
             }
         });
 
-        // Intersection Observer を使用した追加の無限スクロール検出（ビデオグリッド用）
         if ('IntersectionObserver' in window) {
             const loaderElement = document.getElementById('infinite-loader');
             if (loaderElement) {
@@ -1000,7 +983,6 @@
                 observer.observe(loaderElement);
             }
 
-            // Shorts コンテナの右端検出用 Sentinel
             const shortsContainer = $('#home-shorts-container');
             if (shortsContainer.length) {
                 const sentinelHtml = document.createElement('div');
@@ -1021,6 +1003,23 @@
                 shortsObserver.observe(sentinelHtml);
             }
         }
+
+        if ($("#results-container").length > 0) {
+            const resultsContainer = document.getElementById("results-container");
+
+            if (resultsContainer) {
+                const initialVideoLinks = resultsContainer.querySelectorAll('a[href*="/watch?v="]');
+
+                initialVideoLinks.forEach(function (element) {
+                    const href = element.getAttribute("href") || "";
+                    const match = href.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+
+                    if (match) {
+                        seenVideoIds.add(match[1]);
+                    }
+                });
+            }
+        }
     });
 
     function applyFilter(filterType) {
@@ -1028,11 +1027,7 @@
         document.getElementById('search-form').submit();
     }
 
-    function loadNextPage() {
-        isLoading = true;
-        $("#infinite-loader").css("display", "flex");
-
-        // 追加読み込みアニメーション（スケルトンカードの生成）
+    function createMainSkeletonCards(count) {
         const skeletonHtml = `
             <div class="skeleton-card temp-main-skeleton">
                 <div class="skeleton-thumbnail"></div>
@@ -1046,34 +1041,171 @@
                 </div>
             </div>
         `;
-        // 3カラムレイアウト時に適切な数のスケルトンを表示
-        for(let i = 0; i < 6; i++) {
-            $('#results-container').append(skeletonHtml);
+
+        let html = "";
+
+        for (let i = 0; i < count; i++) {
+            html += skeletonHtml;
         }
 
+        return html;
+    }
+
+    function extractVideoIdsFromContainer(container) {
+        const ids = new Set();
+
+        if (!container || !container.length) {
+            return ids;
+        }
+
+        container.find('a[href*="/watch?v="]').each(function () {
+            const href = $(this).attr("href") || "";
+            const match = href.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+
+            if (match) {
+                ids.add(match[1]);
+            }
+        });
+
+        return ids;
+    }
+
+    function filterNewVideoItems($container) {
+        const newItems = [];
+
+        if (!$container || !$container.length) {
+            return newItems;
+        }
+
+        $container.children().each(function () {
+            const $item = $(this);
+
+            if ($item.hasClass("skeleton-card") || $item.hasClass("temp-main-skeleton")) {
+                return;
+            }
+
+            const href = $item.attr("href") || "";
+            const match = href.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+
+            if (!match) {
+                return;
+            }
+
+            const videoId = match[1];
+
+            if (!seenVideoIds.has(videoId)) {
+                seenVideoIds.add(videoId);
+                newItems.push(this);
+            }
+        });
+
+        return newItems;
+    }
+
+    function loadNextPage() {
+        if (isLoading || !hasMore) {
+            return;
+        }
+
+        const resultsContainer = $("#results-container");
+
+        if (!resultsContainer.length) {
+            hasMore = false;
+            return;
+        }
+
+        const currentType = "{{ type|default('') }}";
+
+        if (currentType === "short" || currentType === "channel" || currentType === "playlist") {
+            return;
+        }
+
+        isLoading = true;
+        $("#infinite-loader").css("display", "flex");
+
+        const skeletonCount = window.innerWidth <= 600 ? 2 : 6;
+        const skeletonHtml = createMainSkeletonCards(skeletonCount);
+
+        resultsContainer.append(skeletonHtml);
+
         const nextPage = currentPage + 1;
-        const query = encodeURIComponent("{{ query|default('') }}");
+        const query = "{{ query|default('') }}";
         const type = "{{ type|default('') }}";
 
-        const url = `/search?q=${query}&type=${type}&page=${nextPage}`;
+        const params = new URLSearchParams();
+        params.set("q", query);
+        params.set("type", type || "video");
+        params.set("page", String(nextPage));
+
+        const url = `/search?${params.toString()}`;
 
         $.ajax({
             url: url,
             type: 'GET',
             dataType: 'html',
+            cache: false,
+            timeout: 20000,
             success: function (response) {
-                // スケルトンカードをすべて削除
-                $('#results-container').find('.temp-main-skeleton').remove();
-                
-                const $parsed = $($.parseHTML(response, document, true));
-                let newItems = $parsed.find('#results-container').html();
-                
-                if (!newItems || $.trim(newItems).length === 0) {
-                    newItems = $parsed.filter('#results-container').html();
+                resultsContainer.find('.temp-main-skeleton').remove();
+
+                if (!response || typeof response !== "string" || response.trim().length === 0) {
+                    hasMore = false;
+                    showNotify("すべての動画を読み込みました", false);
+                    return;
                 }
 
-                if (newItems && $.trim(newItems).length > 0) {
-                    $('#results-container').append(newItems);
+                const $parsed = $($.parseHTML(response, document, true));
+                let $newContainer = $parsed.find('#results-container').first();
+
+                if (!$newContainer.length) {
+                    $newContainer = $parsed.filter('#results-container').first();
+                }
+
+                if (!$newContainer.length) {
+                    hasMore = false;
+                    showNotify("すべての動画を読み込みました", false);
+                    return;
+                }
+
+                const $newItems = $newContainer.children().filter(function () {
+                    return !$(this).hasClass("skeleton-card") &&
+                           !$(this).hasClass("temp-main-skeleton");
+                });
+
+                if (!$newItems.length) {
+                    hasMore = false;
+                    showNotify("すべての動画を読み込みました", false);
+                    return;
+                }
+
+                let appendedCount = 0;
+
+                $newItems.each(function () {
+                    const $item = $(this);
+
+                    if (!$item.is('a')) {
+                        return;
+                    }
+
+                    const href = $item.attr("href") || "";
+                    const match = href.match(/[?&]v=([a-zA-Z0-9_-]{11})/);
+
+                    if (!match) {
+                        return;
+                    }
+
+                    const videoId = match[1];
+
+                    if (seenVideoIds.has(videoId)) {
+                        return;
+                    }
+
+                    seenVideoIds.add(videoId);
+                    resultsContainer.append($item);
+                    appendedCount++;
+                });
+
+                if (appendedCount > 0) {
                     currentPage = nextPage;
                     showNotify("新しい動画を読み込みました", false);
                 } else {
@@ -1081,13 +1213,17 @@
                     showNotify("すべての動画を読み込みました", false);
                 }
             },
-            error: function () {
-                // スケルトンカードをすべて削除
-                $('#results-container').find('.temp-main-skeleton').remove();
-                hasMore = false;
-                showNotify("追加データの読み込みに失敗しました。", true);
+            error: function (xhr, status) {
+                resultsContainer.find('.temp-main-skeleton').remove();
+
+                if (status === "timeout") {
+                    showNotify("動画の読み込みがタイムアウトしました。", true);
+                } else {
+                    showNotify("追加データの読み込みに失敗しました。", true);
+                }
             },
             complete: function () {
+                resultsContainer.find('.temp-main-skeleton').remove();
                 isLoading = false;
                 $("#infinite-loader").hide();
             }
