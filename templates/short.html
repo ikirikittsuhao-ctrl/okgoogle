@@ -471,7 +471,8 @@
 {% endblock %}
 
 {% block content %}
-<div class="shorts-container">
+<div id="hidden-cse-container" style="display:none;"></div>
+<div class="shorts-container" id="shortsContainer">
     <a href="javascript:history.back()" class="back-btn" title="戻る">
         <i class="fas fa-arrow-left"></i>
     </a>
@@ -490,7 +491,6 @@
         </div>
     </div>
 
-    <!-- 右側アクションボタン -->
     <div class="side-buttons">
         <div class="action-item">
             <div class="icon-circle"><i class="fas fa-thumbs-up"></i></div>
@@ -513,7 +513,6 @@
         </div>
     </div>
 
-    <!-- 下部情報エリア -->
     <div class="bottom-info">
         <div class="info-content">
             <div class="author-row">
@@ -526,7 +525,6 @@
         </div>
     </div>
 
-    <!-- 概要・コメント用ボトムシート -->
     <div id="descriptionSheet" class="description-sheet">
         <div class="sheet-handle"></div>
         <div class="sheet-header">
@@ -559,7 +557,6 @@
         </div>
     </div>
 
-    <!-- 3点ドットメニュー -->
     <div id="menuOverlay" onclick="toggleMoreMenu()"></div>
     <div id="moreMenu" class="more-menu">
         <div class="menu-item" onclick="copyVideoId('{{ videoid }}')">
@@ -580,6 +577,8 @@
         </div>
     </div>
 </div>
+
+<script async src="https://cse.google.com/cse.js?cx=c04ec9d20c4264b0d"></script>
 {% endblock %}
 
 {% block extra_js %}
@@ -668,6 +667,110 @@
         loadingSpinner.style.display = 'none';
         errorAlert.classList.add('show');
         setTimeout(() => { errorAlert.classList.remove('show'); }, 4000);
+    };
+
+    /* --- スワイプ検知・関連/トレンド動画検索移行ロジック --- */
+    let touchStartY = 0;
+    let touchEndY = 0;
+    let isFetchingShorts = false;
+    const seenVideoIds = new Set(["{{ videoid }}"]);
+    const fallbackKeywords = ["2ch", "スカッと", "ゲーム", "おもしろ"];
+
+    const shortsContainer = document.getElementById('shortsContainer');
+
+    shortsContainer.addEventListener('touchstart', (e) => {
+        touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    shortsContainer.addEventListener('touchend', (e) => {
+        touchEndY = e.changedTouches[0].clientY;
+        handleSwipe();
+    }, { passive: true });
+
+    shortsContainer.addEventListener('wheel', (e) => {
+        if (e.deltaY > 50) {
+            fetchNextShort();
+        }
+    }, { passive: true });
+
+    function handleSwipe() {
+        // 上方向に50px以上スワイプ（画面を下方向へ繰り出す操作）
+        if (touchStartY - touchEndY > 50) {
+            fetchNextShort();
+        }
+    }
+
+    function extractShortsId(url) {
+        const match = url.match(/(?:shorts\/|v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
+        return match ? match[1] : null;
+    }
+
+    function fetchNextShort() {
+        if (isFetchingShorts) return;
+        isFetchingShorts = true;
+        loadingSpinner.style.display = 'block';
+
+        const currentTitle = "{{ video_title }}";
+        let query = currentTitle.replace(/[#＃]/g, '').trim();
+
+        if (!query) {
+            query = fallbackKeywords[Math.floor(Math.random() * fallbackKeywords.length)];
+        }
+
+        executeSearch(query, false);
+    }
+
+    function executeSearch(query, isFallback) {
+        const element = google.search.cse.element.getElement('shortsCse');
+        if (element) {
+            element.execute(query + " site:youtube.com/shorts");
+        } else {
+            // トレンドワードへの切り替えフォールバック処理
+            if (!isFallback) {
+                const randomFallback = fallbackKeywords[Math.floor(Math.random() * fallbackKeywords.length)];
+                executeSearch(randomFallback, true);
+            } else {
+                isFetchingShorts = false;
+                loadingSpinner.style.display = 'none';
+            }
+        }
+    }
+
+    window.__gcse = {
+        parsetags: 'explicit',
+        initializationCallback: function() {
+            google.search.cse.element.render({
+                div: "hidden-cse-container",
+                tag: 'searchresults-only',
+                gname: 'shortsCse'
+            });
+        },
+        searchCallbacks: {
+            web: {
+                ready: function(name, q, promos, results) {
+                    let nextId = null;
+                    if (results && results.length > 0) {
+                        for (let r of results) {
+                            const id = extractShortsId(r.unescapedUrl || r.url || "");
+                            if (id && !seenVideoIds.has(id)) {
+                                nextId = id;
+                                seenVideoIds.add(id);
+                                break;
+                            }
+                        }
+                    }
+
+                    if (nextId) {
+                        window.location.href = '/shorts/' + nextId;
+                    } else {
+                        // 関連動画が見つからなかった場合、人気ワードからランダム取得して再検索
+                        const randomFallback = fallbackKeywords[Math.floor(Math.random() * fallbackKeywords.length)];
+                        executeSearch(randomFallback, true);
+                    }
+                    return true;
+                }
+            }
+        }
     };
 </script>
 {% endblock %}
