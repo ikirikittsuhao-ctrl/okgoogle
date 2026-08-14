@@ -204,6 +204,134 @@ async def _fetch_with_timeout(
         return None
 
 
+async def _is_stream_playable(
+    url: str,
+    timeout: float = 3.0,
+) -> bool:
+    if not url:
+        return False
+
+    try:
+        headers = {
+            "Range": "bytes=0-1023",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/131.0.0.0 Safari/537.36"
+            ),
+        }
+
+        resp = await asyncio.wait_for(
+            client_session.get(
+                url,
+                headers=headers,
+                timeout=timeout,
+            ),
+            timeout=timeout + 0.5,
+        )
+
+        if resp.status_code not in (200, 206):
+            return False
+
+        content_type = (
+            resp.headers.get("content-type", "")
+            .lower()
+            .split(";")[0]
+            .strip()
+        )
+
+        if content_type:
+            valid_content_types = (
+                "video/",
+                "audio/",
+                "application/octet-stream",
+                "application/vnd.apple.mpegurl",
+                "application/x-mpegurl",
+            )
+
+            if not content_type.startswith(valid_content_types):
+                return False
+
+        content = resp.content
+
+        if not content:
+            return False
+
+        if resp.status_code == 206:
+            content_range = resp.headers.get("content-range", "")
+            if not content_range and len(content) == 0:
+                return False
+
+        return True
+
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        return False
+    except Exception:
+        return False
+
+
+async def _filter_playable_streams(
+    stream_urls: List[StreamUrl],
+) -> List[StreamUrl]:
+    if not stream_urls:
+        return []
+
+    results = await asyncio.gather(
+        *[
+            _is_stream_playable(stream.url)
+            for stream in stream_urls
+        ],
+        return_exceptions=True,
+    )
+
+    playable = []
+
+    for stream, result in zip(stream_urls, results):
+        if result is True:
+            playable.append(stream)
+
+    return playable
+
+
+async def _validate_stream_result(
+    result: Optional[StreamResult],
+) -> Optional[StreamResult]:
+    if not result or not result.stream_urls:
+        return None
+
+    playable_streams = await _filter_playable_streams(result.stream_urls)
+
+    if not playable_streams:
+        return None
+
+    playable_urls = {
+        stream.url
+        for stream in playable_streams
+        if stream.url
+    }
+
+    video_urls = [
+        url
+        for url in result.video_urls
+        if url in playable_urls
+    ]
+
+    if not video_urls:
+        video_urls = [
+            stream.url
+            for stream in playable_streams
+            if stream.url
+        ]
+
+    if not video_urls:
+        return None
+
+    result.stream_urls = playable_streams
+    result.video_urls = video_urls
+
+    return result
+
+
 async def fetch_sia_stream(v: str) -> StreamResult:
     try:
         url = f"https://siatube.com/api/stream/{v}"
@@ -250,11 +378,18 @@ async def fetch_sia_stream(v: str) -> StreamResult:
         if not stream_urls:
             raise Exception("No streams found")
 
-        return StreamResult(
+        result = StreamResult(
             stream_urls=stream_urls,
             video_urls=video_urls,
             stream_api_used="sia",
         )
+
+        result = await _validate_stream_result(result)
+
+        if not result:
+            raise Exception("No playable streams found")
+
+        return result
 
     except Exception as e:
         raise Exception(f"Sia failed: {str(e)}")
@@ -309,7 +444,7 @@ async def fetch_piped_stream(v: str) -> StreamResult:
             if not stream_urls:
                 continue
 
-            return StreamResult(
+            result = StreamResult(
                 stream_urls=stream_urls,
                 video_urls=video_urls,
                 title=data.get("title"),
@@ -320,6 +455,13 @@ async def fetch_piped_stream(v: str) -> StreamResult:
                 like_count=data.get("likes", 0),
                 stream_api_used="piped",
             )
+
+            result = await _validate_stream_result(result)
+
+            if not result:
+                continue
+
+            return result
 
         except Exception as e:
             last_error = e
@@ -352,12 +494,19 @@ async def fetch_rapidapi_stream(v: str) -> StreamResult:
             if not stream_urls:
                 continue
 
-            return StreamResult(
+            result = StreamResult(
                 stream_urls=stream_urls,
                 video_urls=video_urls,
                 title=data.get("title"),
                 stream_api_used="rapidapi",
             )
+
+            result = await _validate_stream_result(result)
+
+            if not result:
+                continue
+
+            return result
 
         except Exception as e:
             last_error = e
@@ -379,7 +528,7 @@ async def fetch_zernio_stream(v: str) -> StreamResult:
         if resp.status_code in (301, 302, 303, 307, 308):
             location = resp.headers.get("location") or resp.headers.get("Location")
             if location:
-                return StreamResult(
+                result = StreamResult(
                     stream_urls=[StreamUrl(
                         url=location,
                         resolution="360p",
@@ -388,6 +537,13 @@ async def fetch_zernio_stream(v: str) -> StreamResult:
                     video_urls=[location],
                     stream_api_used="zernio",
                 )
+
+                result = await _validate_stream_result(result)
+
+                if result:
+                    return result
+
+                raise Exception("360p stream is not playable")
 
         raise Exception("No redirect received")
 
@@ -410,11 +566,18 @@ async def fetch_sennin_stream(v: str) -> StreamResult:
         if not stream_urls:
             raise Exception("No streams found")
 
-        return StreamResult(
+        result = StreamResult(
             stream_urls=stream_urls,
             video_urls=video_urls,
             stream_api_used="sennin",
         )
+
+        result = await _validate_stream_result(result)
+
+        if not result:
+            raise Exception("No playable streams found")
+
+        return result
 
     except Exception as e:
         raise Exception(f"Sennin failed: {str(e)}")
@@ -466,7 +629,10 @@ async def _fetch_stream_with_fallback(
 
     if api and api in provider_map:
         try:
-            return await provider_map[api](v)
+            result = await provider_map[api](v)
+            result = await _validate_stream_result(result)
+            if result:
+                return result
         except Exception:
             pass
 
@@ -476,7 +642,7 @@ async def _fetch_stream_with_fallback(
         )
         res_dict = extract_invidious_streams(v_data)
         res_dict["stream_api_used"] = "invidious_fallback"
-        return StreamResult(
+        result = StreamResult(
             stream_urls=[
                 StreamUrl(
                     url=s["url"],
@@ -495,6 +661,12 @@ async def _fetch_stream_with_fallback(
             view_count=res_dict.get("viewCount", 0),
             like_count=res_dict.get("likeCount", 0),
         )
+
+        result = await _validate_stream_result(result)
+
+        if result:
+            return result
+
     except Exception:
         pass
 
@@ -535,9 +707,33 @@ async def fetch_fastest_stream_urls(
                 timeout=timeout + 1.0,
             )
             res_dict = extract_invidious_streams(v_data)
+
             if res_dict.get("videoUrls"):
-                res_dict["stream_api_used"] = "invidious"
-                return res_dict
+                result = StreamResult(
+                    stream_urls=[
+                        StreamUrl(
+                            url=s["url"],
+                            resolution=s.get("resolution", "Auto"),
+                            format=s.get("format", "mp4/mixed"),
+                            audio_url=s.get("audioUrl", ""),
+                        )
+                        for s in res_dict.get("streamUrls", [])
+                    ],
+                    video_urls=res_dict.get("videoUrls", []),
+                    stream_api_used="invidious",
+                    title=res_dict.get("title"),
+                    author=res_dict.get("author"),
+                    author_id=res_dict.get("authorId"),
+                    description_html=res_dict.get("descriptionHtml"),
+                    view_count=res_dict.get("viewCount", 0),
+                    like_count=res_dict.get("likeCount", 0),
+                )
+
+                result = await _validate_stream_result(result)
+
+                if result:
+                    return result.to_dict()
+
         except Exception:
             pass
 
@@ -563,6 +759,8 @@ async def fetch_fastest_stream_urls(
             if task in done:
                 try:
                     result = task.result()
+                    result = await _validate_stream_result(result)
+
                     if result and result.video_urls:
                         for t in pending:
                             t.cancel()
