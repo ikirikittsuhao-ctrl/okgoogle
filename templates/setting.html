@@ -157,7 +157,7 @@
         background-color: rgba(255, 78, 78, 0.15);
     }
 
-    /* 토글 스위치 (YouTube風) */
+    /* 토글 스ウィッチ (YouTube風) */
     .switch {
         position: relative;
         display: inline-block;
@@ -376,13 +376,14 @@
 
             <div class="setting-row">
                 <div class="setting-label-group">
-                    <span class="setting-label">テーマ（ダーク / ライト）</span>
+                    <span class="setting-label">テーマ（ダーク / ライト / グラス）</span>
                     <span class="setting-description">外観のカラーテーマを選択します。</span>
                 </div>
                 <select class="setting-select" id="pref-theme">
                     <option value="system">OSの設定に合わせる</option>
                     <option value="dark">ダークテーマ</option>
                     <option value="light">ライトテーマ</option>
+                    <option value="light-glass">グラス（Light Glass）</option>
                 </select>
             </div>
         </section>
@@ -519,12 +520,15 @@
         });
 
         function applyTheme(theme) {
+            const $html = $('html');
+            $html.removeClass('dark light light-glass');
+
             if (theme === 'dark') {
-                $('html').css('color-scheme', 'dark');
+                $html.addClass('dark');
             } else if (theme === 'light') {
-                $('html').css('color-scheme', 'light');
-            } else {
-                $('html').css('color-scheme', 'normal');
+                $html.addClass('light');
+            } else if (theme === 'light-glass') {
+                $html.addClass('light-glass');
             }
         }
 
