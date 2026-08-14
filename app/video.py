@@ -5,7 +5,7 @@ import httpx
 import logging
 from typing import Optional, Dict, Any, List, Union, Tuple
 from fastapi import APIRouter, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 
 from app.search import (
@@ -645,7 +645,6 @@ async def shorts_player(
     stream_api: Optional[str] = Query(None, alias="stream_api"),
     # 後方互換: ?api= で両方を一括指定
     api: Optional[str] = Query(None),
-    json_req: Optional[int] = Query(None, alias="json"),
 ):
     # info_api / stream_api を優先、なければ共通 api を使う
     resolved_info_api = info_api or api or None
@@ -675,23 +674,6 @@ async def shorts_player(
         info_api_used = v_data.get("api_used", "unknown")
         stream_api_used = s_data.get("stream_api_used", "unknown")
 
-        if json_req == 1:
-            return JSONResponse({
-                "videoid": v,
-                "video_title": v_data.get("title", ""),
-                "videourls": video_urls,
-                "author": v_data.get("author", ""),
-                "view_count": v_data.get("viewCount", 0),
-                "like_count": v_data.get("likeCount", 0),
-                "description": (
-                    v_data.get("descriptionHtml")
-                    or v_data.get("description", "").replace("\n", "<br>")
-                ),
-                "comments": formatted_comments,
-                "info_api_used": info_api_used,
-                "stream_api_used": stream_api_used,
-            })
-
         return templates.TemplateResponse(
             "short.html",
             {
@@ -715,13 +697,9 @@ async def shorts_player(
 
     except httpx.TimeoutException:
         logger.error(f"Timeout in shorts_player for video {v}")
-        if json_req == 1:
-            return JSONResponse({"error": "Timeout"}, status_code=504)
         return templates.TemplateResponse("apitimeout.html", {"request": request})
     except Exception as e:
         logger.error(f"Error in shorts_player for video {v}: {e}")
-        if json_req == 1:
-            return JSONResponse({"error": str(e)}, status_code=500)
         fallback_instances = await get_invidious_instances_from_url(INVIDIOUS_VIDEO_LIST_URL)
         return templates.TemplateResponse(
             "apiallerror.html",
