@@ -513,7 +513,7 @@
     </a>
 
     <div class="video-wrapper" onclick="togglePlay()">
-        <video id="shortVideo" loop autoplay playsinline>
+        <video id="shortVideo" loop autoplay playsinline src="{{ videourls[0] if videourls else '' }}">
             <source src="{{ videourls[0] if videourls else '' }}" type="video/mp4">
         </video>
         <div class="video-state-overlay">
@@ -606,7 +606,7 @@
             <i class="fas fa-fingerprint"></i>
             <span>動画IDをコピー</span>
         </div>
-        <div class="menu-item" id="saveVideoBtn" onclick="window.open('{{ videourls[0] }}', '_blank')">
+        <div class="menu-item" id="saveVideoBtn" onclick="window.open('{{ videourls[0] if videourls else '' }}', '_blank')">
             <i class="fas fa-download"></i>
             <span>動画を保存 (ブラウザ再生)</span>
         </div>
@@ -648,6 +648,14 @@
     video.onplay = () => { pauseIcon.style.display = 'none'; };
     video.onwaiting = () => { loadingSpinner.style.display = 'block'; };
     video.onplaying = () => { loadingSpinner.style.display = 'none'; };
+
+    document.addEventListener('DOMContentLoaded', () => {
+        if (!video.src || video.src === window.location.href) {
+            loadingSpinner.style.display = 'none';
+            errorAlert.classList.add('show');
+            setTimeout(() => { errorAlert.classList.remove('show'); }, 4000);
+        }
+    });
 
     // シート管理
     function openSheet(targetTab) {
@@ -743,9 +751,14 @@
 
             // DOMを更新
             document.title = `${data.video_title} - Shorts - 仙人Tube`;
-            video.src = (data.videourls && data.videourls.length > 0) ? data.videourls[0] : '';
-            video.load();
-            video.play().catch(() => {});
+            const videoUrl = (data.videourls && data.videourls.length > 0) ? data.videourls[0] : '';
+            if (videoUrl) {
+                video.src = videoUrl;
+                video.load();
+                video.play().catch(() => {});
+            } else {
+                throw new Error("No video URL available");
+            }
             
             document.querySelector('.author-name').innerText = `@${data.author || '不明'}`;
             document.querySelector('.video-title-trigger').innerText = data.video_title || '';
