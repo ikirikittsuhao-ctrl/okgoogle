@@ -4,8 +4,7 @@
 
 {% block extra_css %}
 
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-<style>  
+<script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>  <style>  
     :root {  
         --yt-spec-base-background: #0f0f0f;  
         --yt-spec-static-overlay-background-solid: #212121;  
@@ -1026,11 +1025,6 @@
                     <span>保存</span>  
                 </button>  
 
-                <button class="yt-pill-button" id="reload-video-btn" onclick="reloadVideo()">  
-                    <i class="fas fa-redo"></i>  
-                    <span>再読み込み</span>  
-                </button>  
-
                 <div class="yt-custom-select" id="qualitySelect">  
                     <button class="yt-pill-button" id="qualityTrigger" onclick="toggleQualityDropdown(event)">  
                         <i class="fas fa-cog"></i>  
@@ -1176,8 +1170,6 @@
     const streamApiUsed = "{{ stream_api_used }}";  
     const infoApiUsed = "{{ info_api_used }}";  
     let hlsInstance = null;  
-    let loadingTimeout = null;
-    let hasLoadingTimedOut = false;
   
     function saveWatchHistory() {  
         if (!videoId) return;  
@@ -1570,52 +1562,6 @@
             window.location.href = currentUrl.toString();  
         }, 500);  
     }  
-
-    function startLoadingTimeout() {
-        if (loadingTimeout) clearTimeout(loadingTimeout);
-        hasLoadingTimedOut = false;
-        const loader = document.getElementById('loader');
-        loader.style.display = 'flex';
-
-        loadingTimeout = setTimeout(() => {
-            hasLoadingTimedOut = true;
-            showAlert('動画の読み込みがタイムアウトしました。Invidiousに変更しています...', 3000, true);
-            
-            setTimeout(() => {
-                const currentUrl = new URL(window.location.href);
-                currentUrl.searchParams.set('info_api', 'invidious');
-                currentUrl.searchParams.set('stream_api', 'invidious');
-                window.location.href = currentUrl.toString();
-            }, 3500);
-        }, 5000);
-    }
-
-    function stopLoadingTimeout() {
-        if (loadingTimeout) clearTimeout(loadingTimeout);
-        const loader = document.getElementById('loader');
-        loader.style.display = 'none';
-    }
-
-    function reloadVideo() {
-        showAlert('動画を再読み込みしています...', 2000);
-        startLoadingTimeout();
-        
-        video.src = "{{ videourls[0] if videourls else '' }}";
-        video.load();
-        video.play();
-
-        video.addEventListener('canplay', function canplayHandler() {
-            stopLoadingTimeout();
-            video.removeEventListener('canplay', canplayHandler);
-        }, { once: true });
-
-        video.addEventListener('error', function errorHandler() {
-            if (hasLoadingTimedOut) return;
-            showAlert('動画の読み込みに失敗しました。API選択を開いてください。', 3000, true);
-            stopLoadingTimeout();
-            video.removeEventListener('error', errorHandler);
-        }, { once: true });
-    }
   
     document.addEventListener('DOMContentLoaded', () => {  
         const urlParams = new URLSearchParams(window.location.search);  
@@ -1637,7 +1583,37 @@
         selectSourceMode(preferredEmbedMode);  
   
         updateApiDisplay();  
-        saveWatchHistory();
-    });
-</script>
-{% endblock %}
+  
+        const thumbs = document.querySelectorAll('.yt-recommend-thumb');  
+        thumbs.forEach(thumb => {  
+            thumb.loading = 'lazy';  
+        });  
+  
+        saveWatchHistory();  
+    });  
+  
+    if ('IntersectionObserver' in window) {  
+        const observer = new IntersectionObserver((entries) => {  
+            entries.forEach(entry => {  
+                if (entry.isIntersecting && entry.target.tagName === 'IMG') {  
+                    const img = entry.target;  
+                    if (img.dataset.src) {  
+                        img.src = img.dataset.src;  
+                        img.removeAttribute('data-src');  
+                        observer.unobserve(img);  
+                    }  
+                }  
+            });  
+        });  
+  
+        document.querySelectorAll('img[data-src]').forEach(img => observer.observe(img));  
+    }  
+  
+    window.addEventListener('beforeunload', () => {  
+        if (hlsInstance) {  
+            hlsInstance.destroy();  
+        }  
+        video.src = '';  
+        audio.src = '';  
+    });  
+</script>  {% endblock %}
