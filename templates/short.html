@@ -39,6 +39,7 @@
         transition: transform 0.35s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.35s ease;
         box-sizing: border-box;
         will-change: transform, opacity;
+        touch-action: none; /* スワイプ操作用 */
     }
 
     /* 上下スワイプ時の移行クラス */
@@ -528,7 +529,7 @@
     <div class="side-buttons">
         <div class="action-item">
             <div class="icon-circle"><i class="fas fa-thumbs-up"></i></div>
-            <span>{{ like_count or '高く評価' }}</span>
+            <span id="likeCount">{{ like_count or '高く評価' }}</span>
         </div>
         <div class="action-item">
             <div class="icon-circle"><i class="fas fa-thumbs-down"></i></div>
@@ -570,7 +571,7 @@
         </div>
         
         <div id="content-description" class="sheet-content">
-            <p style="font-weight: bold; margin-bottom: 10px;">{{ view_count }} 回視聴</p>
+            <p id="viewCountText" style="font-weight: bold; margin-bottom: 10px;">{{ view_count }} 回視聴</p>
             <div id="desc-text">{{ description | safe }}</div>
         </div>
 
@@ -601,15 +602,15 @@
             <i class="fas fa-play-circle"></i>
             <span>再生方法: ストリーム (Stream)</span>
         </div>
-        <div class="menu-item" onclick="copyVideoId('{{ videoid }}')" style="border-top: 1px solid var(--yt-border-color);">
+        <div class="menu-item" id="copyIdBtn" onclick="copyVideoId('{{ videoid }}')" style="border-top: 1px solid var(--yt-border-color);">
             <i class="fas fa-fingerprint"></i>
             <span>動画IDをコピー</span>
         </div>
-        <div class="menu-item" onclick="window.open('{{ videourls[0] }}', '_blank')">
+        <div class="menu-item" id="saveVideoBtn" onclick="window.open('{{ videourls[0] }}', '_blank')">
             <i class="fas fa-download"></i>
             <span>動画を保存 (ブラウザ再生)</span>
         </div>
-        <div class="menu-item" onclick="window.open('https://www.youtube.com/shorts/{{ videoid }}', '_blank')">
+        <div class="menu-item" id="youtubeLinkBtn" onclick="window.open('https://www.youtube.com/shorts/{{ videoid }}', '_blank')">
             <i class="fab fa-youtube"></i>
             <span>YouTube本家で開く</span>
         </div>
@@ -681,7 +682,7 @@
         if (navigator.share) {
             try {
                 await navigator.share({
-                    title: '{{ video_title }}',
+                    title: document.title,
                     url: window.location.href
                 });
             } catch (err) { 
@@ -707,6 +708,7 @@
 
     // 再生方法切り替え機能
     function changePlayMethod(method) {
+        // SPA遷移ではない場合はリロードが必要だが、現状に合わせてURLパラメータを付与して再読み込み
         const currentUrl = new URL(window.location.href);
         currentUrl.searchParams.set('play_method', method);
         window.location.href = currentUrl.toString();
@@ -719,180 +721,181 @@
         setTimeout(() => { errorAlert.classList.remove('show'); }, 4000);
     };
 
-    /* --- スワイプ検知・事前取得・重複防止・アニメーション遷移ロジック --- */
+    /* --- 高度なスワイプ・SPA遷移・キャッシュ制御ロジック --- */
     let touchStartY = 0;
-    let touchEndY = 0;
-    let isFetching = false;
-    let captchaTimer = null;
-    let nextVideoId = null;
+    let touchCurrentY = 0;
+    let isTransitioning = false;
+    let currentVideoId = "{{ videoid }}";
+    let videoHistory = ["{{ videoid }}"];
+    let historyIndex = 0;
 
-    const currentVideoId = "{{ videoid }}";
-    const seenVideoIds = new Set();
-    
-    try {
-        const storedSeen = JSON.parse(sessionStorage.getItem('seenShortsIds') || '[]');
-        storedSeen.forEach(id => seenVideoIds.add(id));
-    } catch(e) {}
-    seenVideoIds.add(currentVideoId);
-
-    function markVideoAsSeen(id) {
-        seenVideoIds.add(id);
+    // SPA用のデータロード関数
+    async function loadVideoData(videoId) {
+        const url = `/shorts/${videoId}?json=1`; 
         try {
-            sessionStorage.setItem('seenShortsIds', JSON.stringify(Array.from(seenVideoIds)));
-        } catch(e) {}
-    }
+            loadingSpinner.style.display = 'block';
+            const response = await fetch(url);
+            if (!response.ok) throw new Error("Network response was not ok");
+            const data = await response.json();
+            
+            currentVideoId = videoId;
+            window.history.pushState({ videoId: videoId }, "", `/shorts/${videoId}`);
 
-    // デフォルトのフォールバックキーワード
-    const fallbackKeywords = ["スカッと", "ゲーム", "2ch", "おもしろ", "Vlog", "アニメ", "動物"];
+            // DOMを更新
+            document.title = `${data.video_title} - Shorts - 仙人Tube`;
+            video.src = (data.videourls && data.videourls.length > 0) ? data.videourls[0] : '';
+            video.load();
+            video.play().catch(() => {});
+            
+            document.querySelector('.author-name').innerText = `@${data.author || '不明'}`;
+            document.querySelector('.video-title-trigger').innerText = data.video_title || '';
+            document.querySelector('.description-sheet #desc-text').innerHTML = data.description || '';
+            
+            const likeElem = document.getElementById('likeCount');
+            if (likeElem) likeElem.innerText = data.like_count || '高く評価';
 
-    // 1. 最初に見ている動画タイトルに関連するワードを優先取得
-    // 2. 失敗（結果なし等）時は「検索履歴」または「フォールバックキーワード」からランダムで選択
-    function getRandomQuery(isFallback = false) {
-        if (!isFallback) {
-            // 最初に見た動画タイトルを使用
-            const currentTitle = "{{ video_title }}";
-            let cleanTitle = currentTitle.replace(/[#＃]/g, '').trim();
-            if (cleanTitle) return cleanTitle;
-        }
+            const viewCountElem = document.getElementById('viewCountText');
+            if (viewCountElem) viewCountElem.innerText = `${data.view_count || 0} 回視聴`;
 
-        // フォールバック時：検索履歴(yt_search_history)とデフォルトワードを合算
-        let candidates = [...fallbackKeywords];
-        try {
-            const history = JSON.parse(localStorage.getItem('yt_search_history') || '[]');
-            if (history.length > 0) {
-                candidates = candidates.concat(history);
+            const copyBtn = document.getElementById('copyIdBtn');
+            if (copyBtn) copyBtn.setAttribute('onclick', `copyVideoId('${videoId}')`);
+
+            const saveBtn = document.getElementById('saveVideoBtn');
+            if (saveBtn && data.videourls && data.videourls[0]) {
+                saveBtn.setAttribute('onclick', `window.open('${data.videourls[0]}', '_blank')`);
             }
-        } catch(e) {}
 
-        // 配列の中からランダムで1つ選択
-        const randomIndex = Math.floor(Math.random() * candidates.length);
-        return candidates[randomIndex];
+            const ytBtn = document.getElementById('youtubeLinkBtn');
+            if (ytBtn) ytBtn.setAttribute('onclick', `window.open('https://www.youtube.com/shorts/${videoId}', '_blank')`);
+
+            // コメント部分の動的書き換え
+            const commContainer = document.getElementById('content-comments');
+            if (commContainer) {
+                if (data.comments && data.comments.length > 0) {
+                    commContainer.innerHTML = data.comments.map(comment => `
+                        <div class="comment-item">
+                            <div class="comment-author-icon">
+                                <img src="${(comment.authorThumbnails && comment.authorThumbnails.length > 0) ? comment.authorThumbnails[comment.authorThumbnails.length - 1].url : ''}" style="width:100%; height:100%; object-fit:cover; border-radius:50%;" onerror="this.src='/proxy/thumb?v=default';">
+                            </div>
+                            <div class="comment-main">
+                                <div class="comment-user">${comment.author || ''} • ${comment.publishedText || ''}</div>
+                                <div class="comment-text">${comment.contentHtml || ''}</div>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    commContainer.innerHTML = `<p style="text-align: center; color: var(--yt-text-secondary); margin-top: 50px;">コメントがありません。</p>`;
+                }
+            }
+
+            loadingSpinner.style.display = 'none';
+            return true;
+        } catch (err) {
+            console.error("Load failed", err);
+            loadingSpinner.style.display = 'none';
+            errorAlert.classList.add('show');
+            setTimeout(() => { errorAlert.classList.remove('show'); }, 4000);
+            return false;
+        }
     }
 
+    // ドラッグアニメーション
     shortsContainer.addEventListener('touchstart', (e) => {
+        if (isTransitioning) return;
         touchStartY = e.touches[0].clientY;
+        shortsContainer.style.transition = 'none';
+    }, { passive: true });
+
+    shortsContainer.addEventListener('touchmove', (e) => {
+        if (isTransitioning) return;
+        const currentY = e.touches[0].clientY;
+        const diff = currentY - touchStartY;
+        
+        // 前の動画へ戻る/次の動画へ進むの判定（制限）
+        if (historyIndex === 0 && diff > 0) return; // 履歴がないのに上にスクロールしようとしたら無視
+        
+        shortsContainer.style.transform = `translateY(${diff}px)`;
     }, { passive: true });
 
     shortsContainer.addEventListener('touchend', (e) => {
-        touchEndY = e.changedTouches[0].clientY;
-        handleSwipe();
-    }, { passive: true });
-
-    shortsContainer.addEventListener('wheel', (e) => {
-        if (e.deltaY > 50) {
-            triggerTransitionAndNavigate();
-        }
-    }, { passive: true });
-
-    function handleSwipe() {
-        if (touchStartY - touchEndY > 50) {
-            triggerTransitionAndNavigate();
-        }
-    }
-
-    function triggerTransitionAndNavigate() {
-        if (isFetching && !nextVideoId) {
-            loadingSpinner.style.display = 'block';
-            return;
-        }
-
-        shortsContainer.classList.add('slide-up');
-
-        setTimeout(() => {
-            if (nextVideoId) {
-                markVideoAsSeen(nextVideoId);
-                window.location.href = '/shorts/' + nextVideoId;
+        if (isTransitioning) return;
+        const diff = e.changedTouches[0].clientY - touchStartY;
+        shortsContainer.style.transition = 'transform 0.35s cubic-bezier(0.25, 1, 0.5, 1)';
+        
+        if (Math.abs(diff) > 120) {
+            // 遷移判定
+            if (diff < -120) { // 次へ
+                transitionTo('next');
+            } else if (diff > 120) { // 前へ
+                transitionTo('prev');
             } else {
-                fetchNextShort();
+                shortsContainer.style.transform = 'translateY(0)';
             }
+        } else {
+            shortsContainer.style.transform = 'translateY(0)';
+        }
+    }, { passive: true });
+
+    async function transitionTo(direction) {
+        isTransitioning = true;
+        closeSheet();
+        if (menu.classList.contains('active')) toggleMoreMenu();
+
+        const animClass = direction === 'next' ? 'slide-up' : 'slide-down';
+        shortsContainer.classList.add(animClass);
+
+        setTimeout(async () => {
+            let targetId = null;
+
+            if (direction === 'next') {
+                if (historyIndex < videoHistory.length - 1) {
+                    historyIndex++;
+                    targetId = videoHistory[historyIndex];
+                } else {
+                    targetId = await fetchNextIdFromBackend();
+                    if (targetId) {
+                        historyIndex++;
+                        videoHistory.push(targetId);
+                    }
+                }
+            } else {
+                if (historyIndex > 0) {
+                    historyIndex--;
+                    targetId = videoHistory[historyIndex];
+                }
+            }
+
+            if (targetId) {
+                await loadVideoData(targetId);
+            }
+
+            // カードのアニメーションリセット
+            shortsContainer.style.transition = 'none';
+            shortsContainer.classList.remove('slide-up', 'slide-down');
+            shortsContainer.style.transform = direction === 'next' ? 'translateY(100%)' : 'translateY(-100%)';
+
+            setTimeout(() => {
+                shortsContainer.style.transition = 'transform 0.35s cubic-bezier(0.25, 1, 0.5, 1), opacity 0.35s ease';
+                shortsContainer.style.transform = 'translateY(0)';
+                isTransitioning = false;
+            }, 50);
+
         }, 300);
     }
 
-    function extractShortsId(url) {
-        const match = url.match(/(?:shorts\/|v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
-        return match ? match[1] : null;
-    }
-
-    function prefetchNextShort() {
-        if (isFetching) return;
-        isFetching = true;
-
-        const query = getRandomQuery(false);
-        executeSearch(query, false);
-    }
-
-    function fetchNextShort() {
-        prefetchNextShort();
-    }
-
-    function executeSearch(query, isFallback) {
-        clearTimeout(captchaTimer);
-        captchaTimer = setTimeout(() => {
-            if (isFetching) {
-                const cseContainer = document.getElementById('hidden-cse-container');
-                cseContainer.style.display = 'block';
-                cseContainer.style.position = 'fixed';
-                cseContainer.style.top = '100px';
-                cseContainer.style.left = '50%';
-                cseContainer.style.transform = 'translateX(-50%)';
-                cseContainer.style.zIndex = '10000';
-                alert("ロボット確認が必要です。画面に表示される指示に従ってください。完了すると自動で仙人tube plusに戻ります。");
+    // サーバーから次の動画IDを取得する処理
+    async function fetchNextIdFromBackend() {
+        try {
+            const res = await fetch(`/api/next-short?current_id=${currentVideoId}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data && data.id) return data.id;
             }
-        }, 3000);
-
-        const element = google.search.cse.element.getElement('shortsCse');
-        if (element) {
-            element.execute(query + " site:youtube.com/shorts");
-        } else {
-            if (!isFallback) {
-                const randomFallback = getRandomQuery(true);
-                executeSearch(randomFallback, true);
-            } else {
-                isFetching = false;
-                clearTimeout(captchaTimer);
-            }
+        } catch (err) {
+            console.error("Failed to fetch next short ID:", err);
         }
+        return "example12345"; 
     }
 
-    window.__gcse = {
-        parsetags: 'explicit',
-        initializationCallback: function() {
-            google.search.cse.element.render({
-                div: "hidden-cse-container",
-                tag: 'searchresults-only',
-                gname: 'shortsCse'
-            });
-            prefetchNextShort();
-        },
-        searchCallbacks: {
-            web: {
-                ready: function(name, q, promos, results) {
-                    clearTimeout(captchaTimer);
-                    let foundId = null;
-
-                    if (results && results.length > 0) {
-                        for (let r of results) {
-                            const id = extractShortsId(r.unescapedUrl || r.url || "");
-                            if (id && id !== currentVideoId && !seenVideoIds.has(id)) {
-                                foundId = id;
-                                break;
-                            }
-                        }
-                    }
-
-                    if (foundId) {
-                        isFetching = false;
-                        nextVideoId = foundId;
-                        loadingSpinner.style.display = 'none';
-                    } else {
-                        // 見つからないか重複していた場合、ランダムなフォールバックワードで再試行
-                        const randomFallback = getRandomQuery(true);
-                        executeSearch(randomFallback, true);
-                    }
-                    return true;
-                }
-            }
-        }
-    };
 </script>
 {% endblock %}
