@@ -56,6 +56,169 @@
             }
         }
 
+        /* --- Custom Theme Class Overrides --- */
+        html.dark {
+            --yt-bg: #0f0f0f;
+            --yt-header-bg: #0f0f0f;
+            --yt-sidebar-bg: #0f0f0f;
+            --yt-text-primary: #f1f1f1;
+            --yt-text-secondary: #aaa;
+            --yt-border-color: #272727;
+            --yt-hover-bg: rgba(255, 255, 255, 0.1);
+            --yt-active-bg: rgba(255, 255, 255, 0.2);
+            --yt-chip-bg: #272727;
+            --yt-chip-active-bg: #f1f1f1;
+            --yt-chip-active-text: #0f0f0f;
+            --yt-search-bg: #121212;
+            --yt-search-btn-bg: #222222;
+            --yt-suggest-bg: #212121;
+            --yt-suggest-shadow: rgba(0, 0, 0, 0.6);
+        }
+
+        html.light {
+            --yt-bg: #ffffff;
+            --yt-header-bg: #ffffff;
+            --yt-sidebar-bg: #ffffff;
+            --yt-text-primary: #0f0f0f;
+            --yt-text-secondary: #606060;
+            --yt-border-color: #e5e5e5;
+            --yt-hover-bg: rgba(0, 0, 0, 0.05);
+            --yt-active-bg: rgba(0, 0, 0, 0.1);
+            --yt-chip-bg: rgba(0, 0, 0, 0.05);
+            --yt-chip-active-bg: #0f0f0f;
+            --yt-chip-active-text: #ffffff;
+            --yt-search-bg: #ffffff;
+            --yt-search-btn-bg: #f8f8f8;
+            --yt-suggest-bg: #ffffff;
+            --yt-suggest-shadow: rgba(0, 0, 0, 0.2);
+        }
+
+        html.light-glass {
+            --yt-bg: transparent;
+            --yt-header-bg: rgba(220, 245, 255, 0.25);
+            --yt-sidebar-bg: rgba(220, 245, 255, 0.2);
+            --yt-text-primary: #0f172a;
+            --yt-text-secondary: #475569;
+            --yt-border-color: rgba(255, 255, 255, 0.4);
+            --yt-hover-bg: rgba(255, 255, 255, 0.3);
+            --yt-active-bg: rgba(255, 255, 255, 0.45);
+            --yt-chip-bg: rgba(255, 255, 255, 0.3);
+            --yt-chip-active-bg: #0f172a;
+            --yt-chip-active-text: #ffffff;
+            --yt-search-bg: rgba(255, 255, 255, 0.4);
+            --yt-search-btn-bg: rgba(255, 255, 255, 0.3);
+            --yt-suggest-bg: rgba(240, 249, 255, 0.85);
+            --yt-suggest-shadow: rgba(31, 38, 135, 0.15);
+        }
+
+        /* --- Theme-dependent Body Backgrounds --- */
+        html.light body { background-color: hsl(0, 0%, 100%); }
+        html.dark body { background-color: hsl(0, 0%, 6%); }
+
+        /* Light Glass - Blue Stained Glass / Prism Effect */
+        html.light-glass body {
+            background-color: #e0f2fe;
+            background: 
+                /* Vivid Light Orbs */
+                fixed radial-gradient(circle at 15% 15%, hsla(190, 90%, 70%, 1) 0px, transparent 40%),
+                fixed radial-gradient(circle at 85% 20%, hsla(250, 80%, 80%, 1) 0px, transparent 40%),
+                fixed radial-gradient(circle at 20% 80%, hsla(210, 100%, 85%, 1) 0px, transparent 40%),
+                fixed radial-gradient(circle at 80% 80%, hsla(180, 90%, 75%, 1) 0px, transparent 40%),
+                /* Base Gradient */
+                fixed linear-gradient(135deg, #dbeafe 0%, #bfdbfe 50%, #e9d5ff 100%);
+            background-size: 200% 200%;
+            animation: gradientAnimation 20s ease-in-out infinite alternate;
+        }
+
+        /* Glass Panel Effect - The "Magnifying Glass / Distortion" Look */
+        .glass-panel,
+        html.light-glass #yt-header,
+        html.light-glass #yt-sidebar,
+        html.light-glass .ui-autocomplete,
+        html.light-glass .yt-modal {
+            /* Highly transparent blueish tint (Clear Glass) */
+            background-color: rgba(220, 245, 255, 0.15) !important;
+            
+            /* Reduced blur for transparency, high saturation for prism refraction */
+            backdrop-filter: blur(12px) saturate(250%) brightness(110%) contrast(105%) !important;
+            -webkit-backdrop-filter: blur(12px) saturate(250%) brightness(110%) contrast(105%) !important;
+            
+            /* Edges and Thickness - Sharper borders */
+            border: 1px solid rgba(255, 255, 255, 0.4) !important;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.5) !important;
+            border-right: 1px solid rgba(255, 255, 255, 0.5) !important;
+            
+            /* Subtle inner glow for glass edge, reduced shadow for cleaner look */
+            box-shadow: 
+                0 8px 32px 0 rgba(31, 38, 135, 0.05),
+                inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+                inset 0 0 15px rgba(255, 255, 255, 0.15) !important;
+                
+            /* Very faint noise texture */
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.02'/%3E%3C/svg%3E");
+        }
+
+        @keyframes gradientAnimation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        /* Page transition animation */
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(8px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in-main {
+          animation: fadeIn 0.35s ease-out forwards;
+        }
+
+        /* Modal animation */
+        @keyframes scaleIn {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        .animate-scale-in {
+          animation: scaleIn 0.2s ease-out forwards;
+        }
+
+        /* Scrollbars */
+        ::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+          background-color: transparent;
+          border-radius: 20px;
+        }
+        body:hover::-webkit-scrollbar-thumb,
+        div:hover::-webkit-scrollbar-thumb {
+          background-color: rgba(100, 130, 180, 0.5); 
+        }
+        html.light body:hover::-webkit-scrollbar-thumb {
+          background-color: #aaa;
+        }
+        ::-webkit-scrollbar-thumb {
+          transition: background-color 0.2s ease-in-out;
+        }
+        * {
+          scrollbar-width: thin;
+          scrollbar-color: rgba(100, 130, 180, 0.5) transparent;
+        }
+        html.light * {
+            scrollbar-color: #aaa transparent;
+        }
+        .no-scrollbar::-webkit-scrollbar {
+          display: none;
+        }
+        .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+
         * { box-sizing: border-box; }
         body {
             margin: 0;
@@ -393,6 +556,21 @@
         }
     </style>
     {% block extra_css %}{% endblock %}
+    <script>
+        // テーマの即時反映（ちらつき防止）
+        (function() {
+            const savedTheme = localStorage.getItem('pref_theme') || 'system';
+            const htmlEl = document.documentElement;
+            htmlEl.classList.remove('dark', 'light', 'light-glass');
+            if (savedTheme === 'dark') {
+                htmlEl.classList.add('dark');
+            } else if (savedTheme === 'light') {
+                htmlEl.classList.add('light');
+            } else if (savedTheme === 'light-glass') {
+                htmlEl.classList.add('light-glass');
+            }
+        })();
+    </script>
 </head>
 <body>
 
@@ -453,7 +631,7 @@
             </div>
         </aside>
 
-        <main id="yt-main" class="expanded">
+        <main id="yt-main" class="expanded animate-fade-in-main">
             {% block content %}{% endblock %}
         </main>
     </div>
