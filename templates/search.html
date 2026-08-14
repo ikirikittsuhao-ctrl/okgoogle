@@ -92,10 +92,10 @@
         font-weight: 700;
     }
 
-    /* レスポンシブグリッドレイアウト（どんな画面サイズでも何があっても横並び3つ固定） */
+    /* レスポンシブグリッドレイアウト（画面サイズに応じて自動で折り返し表示） */
     .video-grid {
         display: grid;
-        grid-template-columns: repeat(3, 1fr) !important;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important;
         gap: 20px 16px;
         width: 100%;
     }
@@ -555,7 +555,7 @@
     /* モバイル・画面幅縮小時の調整 */
     @media (max-width: 600px) {
         .video-grid {
-            grid-template-columns: repeat(3, 1fr) !important;
+            grid-template-columns: 1fr !important;
             gap: 16px;
         }
 
