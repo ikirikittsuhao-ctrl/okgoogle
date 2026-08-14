@@ -34,7 +34,6 @@ class StreamProvider(Enum):
     INVIDIOUS = "invidious"
     SENNIN = "sennin"
 
-
 @dataclass
 class ProviderConfig:
     name: str
@@ -44,14 +43,12 @@ class ProviderConfig:
     description: str
     handler: Optional[callable] = None
 
-
 @dataclass
 class StreamUrl:
     url: str
     resolution: str
     format: str
     audio_url: str = ""
-
 
 @dataclass
 class StreamResult:
@@ -85,7 +82,6 @@ class StreamResult:
             "viewCount": self.view_count,
             "likeCount": self.like_count,
         }
-
 
 STREAM_API_CONFIG = {
     StreamProvider.SIA: ProviderConfig(
@@ -156,7 +152,6 @@ INFO_API_CONFIG = {
     ),
 }
 
-
 def _normalize_stream_urls(
     formats: List[Dict[str, Any]],
     format_type: str = "mp4/mixed",
@@ -167,12 +162,12 @@ def _normalize_stream_urls(
         url = item.get("url")
         if not url:
             continue
-        
+
         resolution = item.get(
             "quality",
             item.get("qualityLabel", item.get("quality_label", "Auto"))
         )
-        
+
         urls.append(StreamUrl(
             url=url,
             resolution=str(resolution),
@@ -180,7 +175,6 @@ def _normalize_stream_urls(
             audio_url=audio_url,
         ))
     return urls
-
 
 async def _fetch_with_timeout(
     url: str,
@@ -203,140 +197,11 @@ async def _fetch_with_timeout(
     except Exception:
         return None
 
-
-async def _is_stream_playable(
-    url: str,
-    timeout: float = 3.0,
-) -> bool:
-    if not url:
-        return False
-
-    try:
-        headers = {
-            "Range": "bytes=0-1023",
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/131.0.0.0 Safari/537.36"
-            ),
-        }
-
-        resp = await asyncio.wait_for(
-            client_session.get(
-                url,
-                headers=headers,
-                timeout=timeout,
-            ),
-            timeout=timeout + 0.5,
-        )
-
-        if resp.status_code not in (200, 206):
-            return False
-
-        content_type = (
-            resp.headers.get("content-type", "")
-            .lower()
-            .split(";")[0]
-            .strip()
-        )
-
-        if content_type:
-            valid_content_types = (
-                "video/",
-                "audio/",
-                "application/octet-stream",
-                "application/vnd.apple.mpegurl",
-                "application/x-mpegurl",
-            )
-
-            if not content_type.startswith(valid_content_types):
-                return False
-
-        content = resp.content
-
-        if not content:
-            return False
-
-        if resp.status_code == 206:
-            content_range = resp.headers.get("content-range", "")
-            if not content_range and len(content) == 0:
-                return False
-
-        return True
-
-    except (asyncio.TimeoutError, asyncio.CancelledError):
-        return False
-    except Exception:
-        return False
-
-
-async def _filter_playable_streams(
-    stream_urls: List[StreamUrl],
-) -> List[StreamUrl]:
-    if not stream_urls:
-        return []
-
-    results = await asyncio.gather(
-        *[
-            _is_stream_playable(stream.url)
-            for stream in stream_urls
-        ],
-        return_exceptions=True,
-    )
-
-    playable = []
-
-    for stream, result in zip(stream_urls, results):
-        if result is True:
-            playable.append(stream)
-
-    return playable
-
-
-async def _validate_stream_result(
-    result: Optional[StreamResult],
-) -> Optional[StreamResult]:
-    if not result or not result.stream_urls:
-        return None
-
-    playable_streams = await _filter_playable_streams(result.stream_urls)
-
-    if not playable_streams:
-        return None
-
-    playable_urls = {
-        stream.url
-        for stream in playable_streams
-        if stream.url
-    }
-
-    video_urls = [
-        url
-        for url in result.video_urls
-        if url in playable_urls
-    ]
-
-    if not video_urls:
-        video_urls = [
-            stream.url
-            for stream in playable_streams
-            if stream.url
-        ]
-
-    if not video_urls:
-        return None
-
-    result.stream_urls = playable_streams
-    result.video_urls = video_urls
-
-    return result
-
-
 async def fetch_sia_stream(v: str) -> StreamResult:
     try:
         url = f"https://siatube.com/api/stream/{v}"
         data = await _fetch_with_timeout(url, timeout=2.5)
-        
+
         if not data:
             raise Exception("Sia API response empty")
 
@@ -378,33 +243,25 @@ async def fetch_sia_stream(v: str) -> StreamResult:
         if not stream_urls:
             raise Exception("No streams found")
 
-        result = StreamResult(
+        return StreamResult(
             stream_urls=stream_urls,
             video_urls=video_urls,
             stream_api_used="sia",
         )
 
-        result = await _validate_stream_result(result)
-
-        if not result:
-            raise Exception("No playable streams found")
-
-        return result
-
     except Exception as e:
         raise Exception(f"Sia failed: {str(e)}")
-
 
 async def fetch_piped_stream(v: str) -> StreamResult:
     instances = list(PIPED_INSTANCES)
     random.shuffle(instances)
-    
+
     last_error = None
     for instance in instances:
         try:
             url = f"{instance.rstrip('/')}/streams/{v}"
             data = await _fetch_with_timeout(url, timeout=2.5)
-            
+
             if not data:
                 continue
 
@@ -421,7 +278,7 @@ async def fetch_piped_stream(v: str) -> StreamResult:
                 url_str = item.get("url")
                 if not url_str:
                     continue
-                
+
                 quality = item.get("quality", "")
                 if item.get("videoOnly", False):
                     stream_urls.append(StreamUrl(
@@ -444,7 +301,7 @@ async def fetch_piped_stream(v: str) -> StreamResult:
             if not stream_urls:
                 continue
 
-            result = StreamResult(
+            return StreamResult(
                 stream_urls=stream_urls,
                 video_urls=video_urls,
                 title=data.get("title"),
@@ -456,19 +313,11 @@ async def fetch_piped_stream(v: str) -> StreamResult:
                 stream_api_used="piped",
             )
 
-            result = await _validate_stream_result(result)
-
-            if not result:
-                continue
-
-            return result
-
         except Exception as e:
             last_error = e
             continue
 
     raise Exception(f"Piped failed: {str(last_error) if last_error else 'All instances failed'}")
-
 
 async def fetch_rapidapi_stream(v: str) -> StreamResult:
     keys = _get_rapid_api_keys()
@@ -494,19 +343,12 @@ async def fetch_rapidapi_stream(v: str) -> StreamResult:
             if not stream_urls:
                 continue
 
-            result = StreamResult(
+            return StreamResult(
                 stream_urls=stream_urls,
                 video_urls=video_urls,
                 title=data.get("title"),
                 stream_api_used="rapidapi",
             )
-
-            result = await _validate_stream_result(result)
-
-            if not result:
-                continue
-
-            return result
 
         except Exception as e:
             last_error = e
@@ -514,21 +356,20 @@ async def fetch_rapidapi_stream(v: str) -> StreamResult:
 
     raise Exception(f"RapidAPI failed: {str(last_error) if last_error else 'All keys failed'}")
 
-
 async def fetch_zernio_stream(v: str) -> StreamResult:
     try:
         target_url = f"https://www.youtube.com/watch?v={v}"
         url = f"https://getlate.dev/api/tools/youtube-live-downloader?url={target_url}&formatId=2"
-        
+
         resp = await asyncio.wait_for(
             no_redirect_client.get(url, timeout=3.0),
             timeout=3.5
         )
-        
+
         if resp.status_code in (301, 302, 303, 307, 308):
             location = resp.headers.get("location") or resp.headers.get("Location")
             if location:
-                result = StreamResult(
+                return StreamResult(
                     stream_urls=[StreamUrl(
                         url=location,
                         resolution="360p",
@@ -538,24 +379,16 @@ async def fetch_zernio_stream(v: str) -> StreamResult:
                     stream_api_used="zernio",
                 )
 
-                result = await _validate_stream_result(result)
-
-                if result:
-                    return result
-
-                raise Exception("360p stream is not playable")
-
         raise Exception("No redirect received")
 
     except Exception as e:
         raise Exception(f"Zernio failed: {str(e)}")
 
-
 async def fetch_sennin_stream(v: str) -> StreamResult:
     try:
         url = f"{SENNIN_API_BASE}/api/stream/{v}"
         data = await _fetch_with_timeout(url, timeout=3.5)
-        
+
         if not data:
             raise Exception("Sennin API response empty")
 
@@ -566,28 +399,20 @@ async def fetch_sennin_stream(v: str) -> StreamResult:
         if not stream_urls:
             raise Exception("No streams found")
 
-        result = StreamResult(
+        return StreamResult(
             stream_urls=stream_urls,
             video_urls=video_urls,
             stream_api_used="sennin",
         )
 
-        result = await _validate_stream_result(result)
-
-        if not result:
-            raise Exception("No playable streams found")
-
-        return result
-
     except Exception as e:
         raise Exception(f"Sennin failed: {str(e)}")
-
 
 async def fetch_sia_comments(v: str) -> Dict[str, Any]:
     try:
         url = f"https://siatube.com/api/comments?videoId={v}"
         data = await _fetch_with_timeout(url, timeout=3.5)
-        
+
         if data and isinstance(data, dict) and "comments" in data:
             return data
 
@@ -595,7 +420,6 @@ async def fetch_sia_comments(v: str) -> Dict[str, Any]:
 
     except Exception as e:
         raise Exception(f"Sia comments failed: {str(e)}")
-
 
 async def fetch_sennin_comments(v: str, sort: str = "top") -> Dict[str, Any]:
     try:
@@ -610,7 +434,6 @@ async def fetch_sennin_comments(v: str, sort: str = "top") -> Dict[str, Any]:
 
     except Exception as e:
         raise Exception(f"Sennin comments failed: {str(e)}")
-
 
 async def _fetch_stream_with_fallback(
     v: str,
@@ -629,10 +452,7 @@ async def _fetch_stream_with_fallback(
 
     if api and api in provider_map:
         try:
-            result = await provider_map[api](v)
-            result = await _validate_stream_result(result)
-            if result:
-                return result
+            return await provider_map[api](v)
         except Exception:
             pass
 
@@ -642,7 +462,7 @@ async def _fetch_stream_with_fallback(
         )
         res_dict = extract_invidious_streams(v_data)
         res_dict["stream_api_used"] = "invidious_fallback"
-        result = StreamResult(
+        return StreamResult(
             stream_urls=[
                 StreamUrl(
                     url=s["url"],
@@ -661,17 +481,10 @@ async def _fetch_stream_with_fallback(
             view_count=res_dict.get("viewCount", 0),
             like_count=res_dict.get("likeCount", 0),
         )
-
-        result = await _validate_stream_result(result)
-
-        if result:
-            return result
-
     except Exception:
         pass
 
     return None
-
 
 async def fetch_fastest_stream_urls(
     v: str,
@@ -694,6 +507,54 @@ async def fetch_fastest_stream_urls(
             except Exception:
                 pass
 
+        priority_tasks = {
+            "invidious": asyncio.create_task(
+                asyncio.wait_for(
+                    fetch_video_info_invidious_robust(
+                        v,
+                        force_instance=force_instance
+                    ),
+                    timeout=timeout + 1.0,
+                )
+            ),
+            "rapidapi": asyncio.create_task(
+                fetch_rapidapi_stream(v)
+            ),
+            "sia": asyncio.create_task(
+                fetch_sia_stream(v)
+            ),
+        }
+
+        done, pending = await asyncio.wait(
+            priority_tasks.values(),
+            timeout=timeout + 1.5,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        for name, task in priority_tasks.items():
+            if task in done:
+                try:
+                    result = task.result()
+
+                    if name == "invidious":
+                        res_dict = extract_invidious_streams(result)
+                        if res_dict.get("videoUrls"):
+                            res_dict["stream_api_used"] = "invidious"
+                            for t in pending:
+                                t.cancel()
+                            return res_dict
+
+                    elif result and result.video_urls:
+                        for t in pending:
+                            t.cancel()
+                        return result.to_dict()
+
+                except Exception:
+                    continue
+
+        for task in pending:
+            task.cancel()
+
         try:
             zernio_result = await fetch_zernio_stream(v)
             if zernio_result and zernio_result.video_urls:
@@ -707,33 +568,9 @@ async def fetch_fastest_stream_urls(
                 timeout=timeout + 1.0,
             )
             res_dict = extract_invidious_streams(v_data)
-
             if res_dict.get("videoUrls"):
-                result = StreamResult(
-                    stream_urls=[
-                        StreamUrl(
-                            url=s["url"],
-                            resolution=s.get("resolution", "Auto"),
-                            format=s.get("format", "mp4/mixed"),
-                            audio_url=s.get("audioUrl", ""),
-                        )
-                        for s in res_dict.get("streamUrls", [])
-                    ],
-                    video_urls=res_dict.get("videoUrls", []),
-                    stream_api_used="invidious",
-                    title=res_dict.get("title"),
-                    author=res_dict.get("author"),
-                    author_id=res_dict.get("authorId"),
-                    description_html=res_dict.get("descriptionHtml"),
-                    view_count=res_dict.get("viewCount", 0),
-                    like_count=res_dict.get("likeCount", 0),
-                )
-
-                result = await _validate_stream_result(result)
-
-                if result:
-                    return result.to_dict()
-
+                res_dict["stream_api_used"] = "invidious"
+                return res_dict
         except Exception:
             pass
 
@@ -759,8 +596,6 @@ async def fetch_fastest_stream_urls(
             if task in done:
                 try:
                     result = task.result()
-                    result = await _validate_stream_result(result)
-
                     if result and result.video_urls:
                         for t in pending:
                             t.cancel()
@@ -774,7 +609,6 @@ async def fetch_fastest_stream_urls(
         return None
 
     return await fetch_with_inflight(cache_key, _do_fetch, ttl=120.0)
-
 
 async def fetch_comments(
     v: str,
