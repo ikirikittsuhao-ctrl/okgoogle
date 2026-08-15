@@ -507,53 +507,30 @@ async def fetch_fastest_stream_urls(
             except Exception:
                 pass
 
-        priority_tasks = {
-            "invidious": asyncio.create_task(
-                asyncio.wait_for(
-                    fetch_video_info_invidious_robust(
-                        v,
-                        force_instance=force_instance
-                    ),
-                    timeout=timeout + 1.0,
-                )
-            ),
-            "rapidapi": asyncio.create_task(
-                fetch_rapidapi_stream(v)
-            ),
-            "sia": asyncio.create_task(
-                fetch_sia_stream(v)
-            ),
-        }
+        try:
+            rapidapi_result = await asyncio.wait_for(
+                fetch_rapidapi_stream(v),
+                timeout=timeout,
+            )
+            if rapidapi_result and rapidapi_result.video_urls:
+                return rapidapi_result.to_dict()
+        except Exception:
+            pass
 
-        done, pending = await asyncio.wait(
-            priority_tasks.values(),
-            timeout=timeout + 1.5,
-            return_when=asyncio.FIRST_COMPLETED,
-        )
-
-        for name, task in priority_tasks.items():
-            if task in done:
-                try:
-                    result = task.result()
-
-                    if name == "invidious":
-                        res_dict = extract_invidious_streams(result)
-                        if res_dict.get("videoUrls"):
-                            res_dict["stream_api_used"] = "invidious"
-                            for t in pending:
-                                t.cancel()
-                            return res_dict
-
-                    elif result and result.video_urls:
-                        for t in pending:
-                            t.cancel()
-                        return result.to_dict()
-
-                except Exception:
-                    continue
-
-        for task in pending:
-            task.cancel()
+        try:
+            invidious_result = await asyncio.wait_for(
+                fetch_video_info_invidious_robust(
+                    v,
+                    force_instance=force_instance
+                ),
+                timeout=timeout + 1.0,
+            )
+            res_dict = extract_invidious_streams(invidious_result)
+            if res_dict.get("videoUrls"):
+                res_dict["stream_api_used"] = "invidious"
+                return res_dict
+        except Exception:
+            pass
 
         try:
             zernio_result = await fetch_zernio_stream(v)
