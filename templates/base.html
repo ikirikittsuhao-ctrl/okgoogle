@@ -672,9 +672,25 @@
                 localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
             }
 
-            // 検索実行時に履歴を保存
-            $("#search-form").on("submit", function() {
-                saveSearchQuery($("#searchbox").val());
+            // 動画URLから動画IDを抽出する関数
+            function extractVideoId(url) {
+                const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+                const match = url.match(regExp);
+                return (match && match[2].length === 11) ? match[2] : null;
+            }
+
+            // 検索実行時にURL判定・履歴を保存
+            $("#search-form").on("submit", function(e) {
+                const query = $("#searchbox").val().trim();
+                const videoId = extractVideoId(query);
+                
+                if (videoId) {
+                    e.preventDefault();
+                    window.location.href = "/select?v=" + videoId;
+                    return false;
+                }
+                
+                saveSearchQuery(query);
             });
 
             // --- 検索オートコンプリート（履歴 & サジェスト & 高速化 & UI強化） ---
@@ -728,6 +744,12 @@
                     });
                 },
                 select: function(event, ui) {
+                    const videoId = extractVideoId(ui.item.label);
+                    if (videoId) {
+                        event.preventDefault();
+                        window.location.href = "/select?v=" + videoId;
+                        return false;
+                    }
                     saveSearchQuery(ui.item.label);
                 }
             }).focus(function() {
