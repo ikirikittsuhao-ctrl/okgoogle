@@ -309,6 +309,14 @@ async def other_page(request: Request):
 async def help_page(request: Request):
     return templates.TemplateResponse("help.html", {"request": request})
 
+@app.get("/embed/{video_id}", response_class=HTMLResponse)
+async def embed_player(request: Request, video_id: str):
+    return templates.TemplateResponse("embed.html", {"request": request})
+
+@app.get("/embed", response_class=HTMLResponse)
+async def embed_player_query(request: Request, v: str = Query(None)):
+    return templates.TemplateResponse("embed.html", {"request": request})
+
 
 if __name__ == "__main__":
     import uvicorn
