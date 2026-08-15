@@ -317,6 +317,16 @@ async def embed_player(request: Request, video_id: str):
 async def embed_player_query(request: Request, v: str = Query(None)):
     return templates.TemplateResponse("embed.html", {"request": request})
 
+@app.get("/select", response_class=HTMLResponse)
+async def select_video_page(request: Request, v: str = ""):
+    return templates.TemplateResponse(
+        "select.html",
+        {
+            "request": request,
+            "video_id": v
+        }
+    )
+
 
 if __name__ == "__main__":
     import uvicorn
