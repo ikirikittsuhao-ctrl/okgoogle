@@ -8,16 +8,16 @@ from dataclasses import dataclass
 from enum import Enum
 
 from app.search import (
-    fetch_invidious,
-    fetch_with_inflight,
-    client_session,
-    no_redirect_client,
-    get_invidious_instances_from_url,
-    INVIDIOUS_VIDEO_LIST_URL,
-    PIPED_INSTANCES,
-    SENNIN_API_BASE,
-    _get_rapid_api_keys,
-    RAPID_API_HOST,
+fetch_invidious,
+fetch_with_inflight,
+client_session,
+no_redirect_client,
+get_invidious_instances_from_url,
+INVIDIOUS_VIDEO_LIST_URL,
+PIPED_INSTANCES,
+SENNIN_API_BASE,
+_get_rapid_api_keys,
+RAPID_API_HOST,
 )
 
 router = APIRouter()
@@ -62,26 +62,26 @@ class StreamResult:
     view_count: int = 0
     like_count: int = 0
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "streamUrls": [
-                {
-                    "url": s.url,
-                    "resolution": s.resolution,
-                    "format": s.format,
-                    "audioUrl": s.audio_url,
-                }
-                for s in self.stream_urls
-            ],
-            "videoUrls": self.video_urls,
-            "stream_api_used": self.stream_api_used,
-            "title": self.title,
-            "author": self.author,
-            "authorId": self.author_id,
-            "descriptionHtml": self.description_html,
-            "viewCount": self.view_count,
-            "likeCount": self.like_count,
-        }
+def to_dict(self) -> Dict[str, Any]:
+    return {
+        "streamUrls": [
+            {
+                "url": s.url,
+                "resolution": s.resolution,
+                "format": s.format,
+                "audioUrl": s.audio_url,
+            }
+            for s in self.stream_urls
+        ],
+        "videoUrls": self.video_urls,
+        "stream_api_used": self.stream_api_used,
+        "title": self.title,
+        "author": self.author,
+        "authorId": self.author_id,
+        "descriptionHtml": self.description_html,
+        "viewCount": self.view_count,
+        "likeCount": self.like_count,
+    }
 
 STREAM_API_CONFIG = {
     StreamProvider.SIA: ProviderConfig(
@@ -196,6 +196,154 @@ async def _fetch_with_timeout(
         return None
     except Exception:
         return None
+
+async def _check_stream_url_accessible(url: str, timeout: float = 2.5) -> bool:
+    if not url:
+        return False
+
+    try:
+        resp = await asyncio.wait_for(
+            client_session.get(
+                url,
+                headers={
+                    "Range": "bytes=0-0",
+                    "Accept": "*/*",
+                },
+                timeout=timeout,
+            ),
+            timeout=timeout + 0.5,
+        )
+
+        if resp.status_code in (401, 403):
+            return False
+
+        if 200 <= resp.status_code < 400:
+            return True
+
+        return False
+
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        return False
+    except Exception:
+        return False
+
+async def _filter_accessible_stream_result(
+    result: Optional[StreamResult],
+    timeout: float = 2.5,
+) -> Optional[StreamResult]:
+    if not result:
+        return None
+
+    if not result.stream_urls:
+        return None
+
+    checks = await asyncio.gather(
+        *[
+            _check_stream_url_accessible(
+                stream.url,
+                timeout=timeout,
+            )
+            for stream in result.stream_urls
+        ],
+        return_exceptions=True,
+    )
+
+    accessible_stream_urls = []
+
+    for stream, accessible in zip(result.stream_urls, checks):
+        if accessible is True:
+            accessible_stream_urls.append(stream)
+
+    if not accessible_stream_urls:
+        return None
+
+    accessible_urls = {
+        stream.url
+        for stream in accessible_stream_urls
+        if stream.url
+    }
+
+    video_urls = [
+        url
+        for url in result.video_urls
+        if url in accessible_urls
+    ]
+
+    if not video_urls:
+        video_urls = [
+            stream.url
+            for stream in accessible_stream_urls
+            if stream.url
+        ]
+
+    return StreamResult(
+        stream_urls=accessible_stream_urls,
+        video_urls=video_urls,
+        stream_api_used=result.stream_api_used,
+        title=result.title,
+        author=result.author,
+        author_id=result.author_id,
+        description_html=result.description_html,
+        view_count=result.view_count,
+        like_count=result.like_count,
+    )
+
+async def _filter_accessible_result_dict(
+    result: Optional[Dict[str, Any]],
+    timeout: float = 2.5,
+) -> Optional[Dict[str, Any]]:
+    if not result:
+        return None
+
+    stream_urls = result.get("streamUrls", []) or []
+    video_urls = result.get("videoUrls", []) or []
+
+    if not stream_urls:
+        return None
+
+    checks = await asyncio.gather(
+        *[
+            _check_stream_url_accessible(
+                stream.get("url", ""),
+                timeout=timeout,
+            )
+            for stream in stream_urls
+        ],
+        return_exceptions=True,
+    )
+
+    accessible_stream_urls = []
+
+    for stream, accessible in zip(stream_urls, checks):
+        if accessible is True:
+            accessible_stream_urls.append(stream)
+
+    if not accessible_stream_urls:
+        return None
+
+    accessible_urls = {
+        stream.get("url")
+        for stream in accessible_stream_urls
+        if stream.get("url")
+    }
+
+    filtered_video_urls = [
+        url
+        for url in video_urls
+        if url in accessible_urls
+    ]
+
+    if not filtered_video_urls:
+        filtered_video_urls = [
+            stream.get("url")
+            for stream in accessible_stream_urls
+            if stream.get("url")
+        ]
+
+    result["streamUrls"] = accessible_stream_urls
+    result["videoUrls"] = filtered_video_urls
+
+    return result
 
 async def fetch_sia_stream(v: str) -> StreamResult:
     try:
@@ -452,7 +600,10 @@ async def _fetch_stream_with_fallback(
 
     if api and api in provider_map:
         try:
-            return await provider_map[api](v)
+            result = await provider_map[api](v)
+            result = await _filter_accessible_stream_result(result)
+            if result:
+                return result
         except Exception:
             pass
 
@@ -462,6 +613,12 @@ async def _fetch_stream_with_fallback(
         )
         res_dict = extract_invidious_streams(v_data)
         res_dict["stream_api_used"] = "invidious_fallback"
+
+        res_dict = await _filter_accessible_result_dict(res_dict)
+
+        if not res_dict:
+            return None
+
         return StreamResult(
             stream_urls=[
                 StreamUrl(
@@ -503,7 +660,12 @@ async def fetch_fastest_stream_urls(
                     v, api=api, force_instance=force_instance
                 )
                 if result:
-                    return result.to_dict()
+                    result = await _filter_accessible_stream_result(
+                        result,
+                        timeout=timeout,
+                    )
+                    if result:
+                        return result.to_dict()
             except Exception:
                 pass
 
@@ -540,23 +702,41 @@ async def fetch_fastest_stream_urls(
                         res_dict = extract_invidious_streams(result)
                         if res_dict.get("videoUrls"):
                             res_dict["stream_api_used"] = "invidious"
-                            for t in pending:
-                                t.cancel()
-                            return res_dict
+
+                            res_dict = await _filter_accessible_result_dict(
+                                res_dict,
+                                timeout=timeout,
+                            )
+
+                            if res_dict and res_dict.get("videoUrls"):
+                                for t in pending:
+                                    t.cancel()
+                                return res_dict
 
                     elif result and result.video_urls:
-                        for t in pending:
-                            t.cancel()
-                        return result.to_dict()
+                        result = await _filter_accessible_stream_result(
+                            result,
+                            timeout=timeout,
+                        )
+
+                        if result and result.video_urls:
+                            for t in pending:
+                                t.cancel()
+                            return result.to_dict()
 
                 except Exception:
                     continue
 
-        for task in pending:
-            task.cancel()
+        for t in pending:
+            t.cancel()
 
         try:
             zernio_result = await fetch_zernio_stream(v)
+            zernio_result = await _filter_accessible_stream_result(
+                zernio_result,
+                timeout=timeout,
+            )
+
             if zernio_result and zernio_result.video_urls:
                 return zernio_result.to_dict()
         except Exception:
@@ -565,12 +745,19 @@ async def fetch_fastest_stream_urls(
         try:
             v_data = await asyncio.wait_for(
                 fetch_video_info_invidious_robust(v, force_instance=force_instance),
-                timeout=timeout + 1.0,
+                timeout=timeout + 1.0
             )
             res_dict = extract_invidious_streams(v_data)
             if res_dict.get("videoUrls"):
                 res_dict["stream_api_used"] = "invidious"
-                return res_dict
+
+                res_dict = await _filter_accessible_result_dict(
+                    res_dict,
+                    timeout=timeout,
+                )
+
+                if res_dict and res_dict.get("videoUrls"):
+                    return res_dict
         except Exception:
             pass
 
@@ -596,10 +783,17 @@ async def fetch_fastest_stream_urls(
             if task in done:
                 try:
                     result = task.result()
+
+                    result = await _filter_accessible_stream_result(
+                        result,
+                        timeout=timeout,
+                    )
+
                     if result and result.video_urls:
                         for t in pending:
                             t.cancel()
                         return result.to_dict()
+
                 except Exception:
                     continue
 
