@@ -1,3 +1,4 @@
+import requests
 import asyncio
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response, JSONResponse
@@ -14,9 +15,45 @@ from app.stream import router as stream_router
 from app.channel import router as channel_router
 from app.short import router as short_router
 
+SOURCES = {
+    "Education - Toka_Kun_-1": "https://raw.githubusercontent.com/toka-kun/Education/refs/heads/main/keys/key1.json",
+    "Education - Toka_Kun_-2": "https://raw.githubusercontent.com/toka-kun/Education/refs/heads/main/keys/key2.json",
+    "Education - Toka_Kun_-3": "https://raw.githubusercontent.com/toka-kun/Education/refs/heads/main/keys/key3.json",
+    "Education - Toka_Kun_-4": "https://raw.githubusercontent.com/toka-kun/Education/refs/heads/main/keys/key4.json",
+    "Education - siawaseok": "https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json",
+    "Education - wakame": "https://raw.githubusercontent.com/wakame02/wktopu/refs/heads/main/edu.text",
+    "Education - woolisbest4520-1": "https://raw.githubusercontent.com/wista-api-project/auto/refs/heads/main/edu/1.txt",
+    "Education - woolisbest4520-2": "https://raw.githubusercontent.com/wista-api-project/auto/refs/heads/main/edu/2.txt",
+    "Education - woolisbest4520-3": "https://raw.githubusercontent.com/wista-api-project/auto/refs/heads/main/edu/3.txt",
+}
+
+def get_education_embed_url(video_id: str, source_name: str) -> str:
+    if source_name not in SOURCES:
+        raise ValueError(f"未知のソース名です: {source_name}")
+
+    raw_url = SOURCES[source_name]
+
+    response = requests.get(raw_url, timeout=10)
+    response.raise_for_status()
+
+    params = ""
+
+    if source_name.startswith("Education - Toka_Kun"):
+        data = response.json()
+        params = data.get("result", "")
+    elif source_name == "Education - siawaseok":
+        data = response.json()
+        params = data.get("params", "")
+    else:
+        
+        params = response.text.strip()
+
+    embed_url = f"https://www.youtubeeducation.com/embed/{video_id}{params}"
+    return embed_url
+
 app = FastAPI()
 
-# --- 画像等の静的ファイル配信ルートの追加（imgディレクトリ以下全体および個別パスへの対応） ---
+
 app.mount("/img", StaticFiles(directory="img"), name="img")
 
 templates = Jinja2Templates(directory="templates")
@@ -107,6 +144,15 @@ async def get_channel_info_api(ucid: str):
     except Exception:
         pass
     return JSONResponse(content={"ucid": ucid, "name": ucid, "icon": "", "handle": "", "description": ""})
+
+# --- 追加: 教育用URL取得API ---
+@app.get("/api/get_education_url")
+def get_education_url_api(video_id: str, source: str):
+    try:
+        url = get_education_embed_url(video_id, source)
+        return {"url": url}
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
