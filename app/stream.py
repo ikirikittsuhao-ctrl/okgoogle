@@ -507,50 +507,53 @@ async def fetch_fastest_stream_urls(
             except Exception:
                 pass
 
-        try:
-            rapidapi_result = await asyncio.wait_for(
-                fetch_rapidapi_stream(v),
-                timeout=timeout,
-            )
-            if rapidapi_result and rapidapi_result.video_urls:
-                return rapidapi_result.to_dict()
-        except Exception:
-            pass
-
-        try:
-            invidious_result = await asyncio.wait_for(
-                fetch_video_info_invidious_robust(
-                    v,
-                    force_instance=force_instance
-                ),
-                timeout=timeout + 1.0,
-            )
-            res_dict = extract_invidious_streams(invidious_result)
-            if res_dict.get("videoUrls"):
-                res_dict["stream_api_used"] = "invidious"
-                return res_dict
-        except Exception:
-            pass
-
-        try:
-            zernio_result = await fetch_zernio_stream(v)
-            if zernio_result and zernio_result.video_urls:
-                return zernio_result.to_dict()
-        except Exception:
-            pass
-
-        try:
-            v_data = await asyncio.wait_for(
-                fetch_video_info_invidious_robust(v, force_instance=force_instance),
-                timeout=timeout + 1.0,
+        # === 最優先取得フェーズ（Invidious ＆ RapidAPI を並列実行） ===
+        async def _fetch_invidious_wrapper():
+            v_data = await fetch_video_info_invidious_robust(
+                v, force_instance=force_instance
             )
             res_dict = extract_invidious_streams(v_data)
             if res_dict.get("videoUrls"):
                 res_dict["stream_api_used"] = "invidious"
                 return res_dict
-        except Exception:
-            pass
+            return None
 
+        async def _fetch_rapidapi_wrapper():
+            res = await fetch_rapidapi_stream(v)
+            if res and res.video_urls:
+                return res.to_dict()
+            return None
+
+        priority_tasks = [
+            asyncio.create_task(_fetch_invidious_wrapper()),
+            asyncio.create_task(_fetch_rapidapi_wrapper()),
+        ]
+
+        done_priority, pending_priority = await asyncio.wait(
+            priority_tasks,
+            timeout=timeout + 1.0,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        for task in done_priority:
+            try:
+                result = task.result()
+                if result:
+                    for t in pending_priority:
+                        t.cancel()
+                    return result
+            except Exception:
+                continue
+
+        for task in pending_priority:
+            try:
+                result = await task
+                if result:
+                    return result
+            except Exception:
+                continue
+
+        # === 既存のフォールバック・レース処理（上記で失敗した場合に実行） ===
         providers = [
             ("sia", fetch_sia_stream),
             ("piped", fetch_piped_stream),
